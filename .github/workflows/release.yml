@@ -1,0 +1,117 @@
+name: "🚀 release"
+
+on:
+  pull_request:
+    types: [closed]
+    branches: [main]
+
+permissions:
+  contents: write
+
+env:
+  CARGO_HUSKY_DONT_INSTALL_HOOKS: true
+
+jobs:
+  build-artifacts:
+    if: github.head_ref == 'release' && github.event.pull_request.merged == true
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-musl
+            os: ubuntu-latest
+          - target: x86_64-apple-darwin
+            os: macos-latest
+          - target: aarch64-apple-darwin
+            os: macos-latest
+          - target: x86_64-pc-windows-msvc
+            os: windows-latest
+    env:
+      archive_name: artifact
+
+    name: ${{ matrix.target }}
+    timeout-minutes: 30
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: "☁️ checkout repository"
+        uses: actions/checkout@v4
+
+      - name: "💿 cache cargo"
+        uses: Swatinem/rust-cache@v2
+
+      - name: "🔧 install host target"
+        run: rustup target add ${{ matrix.target }}
+
+      - name: "🔧 install musl-tools"
+        if: ${{ matrix.target == 'x86_64-unknown-linux-musl' }}
+        run: sudo apt-get install -y musl-tools
+
+      - name: "📦 build"
+        run: cargo build --release --target ${{ matrix.target }}
+
+      - name: "🗃️ set archive name (non-windows)"
+        id: archive
+        run: echo "archive_name=knope-${{ matrix.target }}" >> $GITHUB_ENV
+
+      - name: "🗃️ set archive name (windows)"
+        if: ${{ matrix.os == 'windows-latest' }}
+        run: echo "archive_name=knope-${{ matrix.target }}" | Out-File -FilePath $Env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: "📁 create archive folder"
+        run: mkdir ${{ env.archive_name }}
+
+      - name: "🗂️ copy unix artifact"
+        if: ${{ matrix.os != 'windows-latest' }}
+        run: cp target/${{ matrix.target }}/release/knope ${{ env.archive_name }}
+
+      - name: "🚀 upload artifact"
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.target }}
+          path: ${{ env.archive_name }}.tgz
+          if-no-files-found: error
+
+  release:
+    needs: [build-artifacts]
+
+    timeout-minutes: 30
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: "☁️ checkout repository"
+        uses: actions/checkout@v4
+
+      - name: "📦 download artifacts"
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: "📓 configure knope"
+        uses: knope-dev/action@v2.0.0
+        with:
+          version: 0.14.0
+
+      - name: "🚀 release"
+        run: knope release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  publish-crates:
+    needs: [release]
+
+    timeout-minutes: 30
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: "☁️ checkout repository"
+        uses: actions/checkout@v4
+
+      - name: "💿 cache cargo"
+        uses: Swatinem/rust-cache@v2
+
+      - name: "🚀 publish crates"
+        uses: katyo/publish-crates@v2
+        with:
+          registry-token: ${{ secrets.CARGO_TOKEN }}

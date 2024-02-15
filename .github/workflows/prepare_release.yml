@@ -1,0 +1,37 @@
+name: "📦 prepare release"
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+env:
+  CARGO_HUSKY_DONT_INSTALL_HOOKS: true
+
+jobs:
+  prepare-release:
+    if: "!contains(github.event.head_commit.message, 'chore: prepare release')" # skip merges from releases
+    runs-on: ubuntu-latest
+    steps:
+      - name: "☁️ checkout repository"
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: "⚙️ configure git"
+        run: |
+          git config --global user.name GitHub Actions
+          git config user.email github-actions@github.com
+
+      - name: "📓 configure knope"
+        uses: knope-dev/action@v2.0.0
+        with:
+          version: 0.14.0
+
+      - name: "📦 prepare release"
+        run: knope prepare-release --verbose
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        continue-on-error: true
