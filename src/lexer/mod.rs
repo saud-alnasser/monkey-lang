@@ -156,4 +156,37 @@ mod tests {
             assert_eq!(actual, expected);
         }
     }
+
+    #[test]
+    fn test_conditional_statement() {
+        let input = "if (5 < 10) { return true; } else { return false; }";
+
+        let tokens = vec![
+            Token::IF,
+            Token::LPAREN,
+            Token::INT("5".into()),
+            Token::LT,
+            Token::INT("10".into()),
+            Token::RPAREN,
+            Token::LBRACE,
+            Token::RETURN,
+            Token::TRUE,
+            Token::SEMICOLON,
+            Token::RBRACE,
+            Token::ELSE,
+            Token::LBRACE,
+            Token::RETURN,
+            Token::FALSE,
+            Token::SEMICOLON,
+            Token::RBRACE,
+            Token::EOF,
+        ];
+
+        let mut lexer = Lexer::new(input);
+
+        for expected in tokens {
+            let actual = lexer.next();
+            assert_eq!(actual, expected);
+        }
+    }
 }
