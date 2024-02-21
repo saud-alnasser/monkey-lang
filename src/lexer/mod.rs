@@ -19,6 +19,7 @@ impl Lexer<'_> {
 
     pub fn next(&mut self) -> Token {
         // NOTE: order of quantifiers is important.
+        // NOTE: direct usage of quantifiers and not using dynamic dispatch is for performance.
         if let Some(_) = self.chars.peek() {
             if let Some(token) = WhitespaceQuantifier::process(&mut self.chars) {
                 return token;
@@ -99,6 +100,45 @@ mod tests {
             Token::IDENT("five".into()),
             Token::ASSIGN,
             Token::INT("5".into()),
+            Token::SEMICOLON,
+            Token::EOF,
+        ];
+
+        let mut lexer = Lexer::new(input);
+
+        for expected in tokens {
+            let actual = lexer.next();
+            assert_eq!(actual, expected);
+        }
+    }
+
+    #[test]
+    fn test_function_statement() {
+        let input = "let add = fn(x, y) { x + y; }; add(5, 10);";
+
+        let tokens = vec![
+            Token::LET,
+            Token::IDENT("add".into()),
+            Token::ASSIGN,
+            Token::FUNCTION,
+            Token::LPAREN,
+            Token::IDENT("x".into()),
+            Token::COMMA,
+            Token::IDENT("y".into()),
+            Token::RPAREN,
+            Token::LBRACE,
+            Token::IDENT("x".into()),
+            Token::PLUS,
+            Token::IDENT("y".into()),
+            Token::SEMICOLON,
+            Token::RBRACE,
+            Token::SEMICOLON,
+            Token::IDENT("add".into()),
+            Token::LPAREN,
+            Token::INT("5".into()),
+            Token::COMMA,
+            Token::INT("10".into()),
+            Token::RPAREN,
             Token::SEMICOLON,
             Token::EOF,
         ];
