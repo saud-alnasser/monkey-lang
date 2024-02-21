@@ -1,5 +1,4 @@
 #[derive(Debug, PartialEq)]
-#[allow(dead_code)]
 pub enum Token {
     // special
     ILLEGAL,
