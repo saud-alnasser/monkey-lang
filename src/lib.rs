@@ -1,5 +1,5 @@
 mod lexer;
 mod repl;
 
-pub use lexer::{Lexer, Token};
-pub use repl::Repl;
+pub use lexer::{Lexer, Span, Token};
+pub use repl::REPL;

@@ -1,20 +1,16 @@
-use super::{tokens::Token, utils};
+use super::{utils, Span, Token};
 use std::{iter::Peekable, str::Chars};
 
 pub trait Quantifier {
-    fn process(chars: &mut Peekable<Chars>) -> Option<Token>;
+    fn process(chars: &mut Peekable<Chars>, span: &mut Span) -> Option<Token>;
 }
 
 pub struct WhitespaceQuantifier;
 
 impl Quantifier for WhitespaceQuantifier {
-    fn process(chars: &mut Peekable<Chars>) -> Option<Token> {
-        while let Some(c) = chars.peek() {
-            if !c.is_ascii_whitespace() {
-                break;
-            }
-
-            chars.next();
+    fn process(chars: &mut Peekable<Chars>, span: &mut Span) -> Option<Token> {
+        if let Some(whitespace) = utils::take_series_where(chars, |c| c.is_whitespace()) {
+            span.advance(&whitespace);
         }
 
         None
@@ -24,42 +20,54 @@ impl Quantifier for WhitespaceQuantifier {
 pub struct OperatorsQuantifier;
 
 impl Quantifier for OperatorsQuantifier {
-    fn process(chars: &mut Peekable<Chars>) -> Option<Token> {
+    fn process(chars: &mut Peekable<Chars>, span: &mut Span) -> Option<Token> {
         match chars.peek()? {
             '=' => {
                 chars.next();
                 match chars.peek() {
                     Some('=') => {
                         chars.next();
-                        Some(Token::EQ)
+                        span.advance("==");
+                        Some(Token::EQ { span: span.clone() })
                     }
-                    _ => Some(Token::ASSIGN),
+                    _ => {
+                        span.advance("=");
+                        Some(Token::ASSIGN { span: span.clone() })
+                    }
                 }
             }
             '+' => {
                 chars.next();
-                Some(Token::PLUS)
+                span.advance("+");
+                Some(Token::PLUS { span: span.clone() })
             }
             '-' => {
                 chars.next();
-                Some(Token::MINUS)
+                span.advance("-");
+                Some(Token::MINUS { span: span.clone() })
             }
             '*' => {
                 chars.next();
-                Some(Token::ASTERISK)
+                span.advance("*");
+                Some(Token::ASTERISK { span: span.clone() })
             }
             '/' => {
                 chars.next();
-                Some(Token::SLASH)
+                span.advance("/");
+                Some(Token::SLASH { span: span.clone() })
             }
             '!' => {
                 chars.next();
                 match chars.peek() {
                     Some('=') => {
                         chars.next();
-                        Some(Token::NEQ)
+                        span.advance("!=");
+                        Some(Token::NEQ { span: span.clone() })
                     }
-                    _ => Some(Token::BANG),
+                    _ => {
+                        span.advance("!");
+                        Some(Token::BANG { span: span.clone() })
+                    }
                 }
             }
             '<' => {
@@ -67,9 +75,13 @@ impl Quantifier for OperatorsQuantifier {
                 match chars.peek() {
                     Some('=') => {
                         chars.next();
-                        Some(Token::LTE)
+                        span.advance("<=");
+                        Some(Token::LTE { span: span.clone() })
                     }
-                    _ => Some(Token::LT),
+                    _ => {
+                        span.advance("<");
+                        Some(Token::LT { span: span.clone() })
+                    }
                 }
             }
             '>' => {
@@ -77,9 +89,13 @@ impl Quantifier for OperatorsQuantifier {
                 match chars.peek() {
                     Some('=') => {
                         chars.next();
-                        Some(Token::GTE)
+                        span.advance(">=");
+                        Some(Token::GTE { span: span.clone() })
                     }
-                    _ => Some(Token::GT),
+                    _ => {
+                        span.advance(">");
+                        Some(Token::GT { span: span.clone() })
+                    }
                 }
             }
             _ => None,
@@ -90,47 +106,66 @@ impl Quantifier for OperatorsQuantifier {
 pub struct DelimitersQuantifier;
 
 impl Quantifier for DelimitersQuantifier {
-    fn process(chars: &mut Peekable<Chars>) -> Option<Token> {
-        let token = match chars.peek()? {
-            ',' => Some(Token::COMMA),
-            ';' => Some(Token::SEMICOLON),
+    fn process(chars: &mut Peekable<Chars>, span: &mut Span) -> Option<Token> {
+        match chars.peek()? {
+            ',' => {
+                chars.next();
+                span.advance(",");
+                Some(Token::COMMA { span: span.clone() })
+            }
+            ';' => {
+                chars.next();
+                span.advance(";");
+                Some(Token::SEMICOLON { span: span.clone() })
+            }
             _ => None,
-        };
-
-        if token.is_some() {
-            chars.next();
         }
-
-        token
     }
 }
 
 pub struct BracketsQuantifier;
 
 impl Quantifier for BracketsQuantifier {
-    fn process(chars: &mut Peekable<Chars>) -> Option<Token> {
-        let token = match chars.peek()? {
-            '(' => Some(Token::LPAREN),
-            ')' => Some(Token::RPAREN),
-            '{' => Some(Token::LBRACE),
-            '}' => Some(Token::RBRACE),
+    fn process(chars: &mut Peekable<Chars>, span: &mut Span) -> Option<Token> {
+        match chars.peek()? {
+            '(' => {
+                chars.next();
+                span.advance("(");
+                Some(Token::LPAREN { span: span.clone() })
+            }
+            ')' => {
+                chars.next();
+                span.advance(")");
+                Some(Token::RPAREN { span: span.clone() })
+            }
+            '{' => {
+                chars.next();
+                span.advance("{");
+                Some(Token::LBRACE { span: span.clone() })
+            }
+            '}' => {
+                chars.next();
+                span.advance("}");
+                Some(Token::RBRACE { span: span.clone() })
+            }
             _ => None,
-        };
-
-        if token.is_some() {
-            chars.next();
         }
-
-        token
     }
 }
 
 pub struct LiteralsQuantifier;
 
 impl Quantifier for LiteralsQuantifier {
-    fn process(chars: &mut Peekable<Chars>) -> Option<Token> {
+    fn process(chars: &mut Peekable<Chars>, span: &mut Span) -> Option<Token> {
         match utils::take_series_where(chars, |c| c.is_ascii_digit()) {
-            Some(literal) => Some(Token::INT(literal)),
+            Some(literal) => {
+                span.advance(&literal);
+
+                Some(Token::INT {
+                    span: span.clone(),
+                    value: Box::from(literal),
+                })
+            }
             None => None,
         }
     }
@@ -139,18 +174,25 @@ impl Quantifier for LiteralsQuantifier {
 pub struct KeywordAndIdentifiersQuantifier;
 
 impl Quantifier for KeywordAndIdentifiersQuantifier {
-    fn process(chars: &mut Peekable<Chars>) -> Option<Token> {
+    fn process(chars: &mut Peekable<Chars>, span: &mut Span) -> Option<Token> {
         match utils::take_series_where(chars, |c| c.is_ascii_alphanumeric() || *c == '_') {
-            Some(keyword) => match &keyword[..] {
-                "let" => Some(Token::LET),
-                "fn" => Some(Token::FUNCTION),
-                "return" => Some(Token::RETURN),
-                "if" => Some(Token::IF),
-                "else" => Some(Token::ELSE),
-                "true" => Some(Token::TRUE),
-                "false" => Some(Token::FALSE),
-                identifier => Some(Token::IDENT(Box::from(identifier))),
-            },
+            Some(keyword) => {
+                span.advance(&keyword);
+
+                match &keyword[..] {
+                    "let" => Some(Token::LET { span: span.clone() }),
+                    "fn" => Some(Token::FUNCTION { span: span.clone() }),
+                    "return" => Some(Token::RETURN { span: span.clone() }),
+                    "if" => Some(Token::IF { span: span.clone() }),
+                    "else" => Some(Token::ELSE { span: span.clone() }),
+                    "true" => Some(Token::TRUE { span: span.clone() }),
+                    "false" => Some(Token::FALSE { span: span.clone() }),
+                    identifier => Some(Token::IDENT {
+                        span: span.clone(),
+                        value: Box::from(identifier),
+                    }),
+                }
+            }
             None => None,
         }
     }
