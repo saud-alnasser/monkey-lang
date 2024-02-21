@@ -25,23 +25,65 @@ pub struct OperatorsQuantifier;
 
 impl Quantifier for OperatorsQuantifier {
     fn process(chars: &mut Peekable<Chars>) -> Option<Token> {
-        let token = match chars.peek()? {
-            '=' => Some(Token::ASSIGN),
-            '+' => Some(Token::PLUS),
-            '-' => Some(Token::MINUS),
-            '*' => Some(Token::ASTERISK),
-            '/' => Some(Token::SLASH),
-            '!' => Some(Token::BANG),
-            '<' => Some(Token::LT),
-            '>' => Some(Token::GT),
+        match chars.peek()? {
+            '=' => {
+                chars.next();
+                match chars.peek() {
+                    Some('=') => {
+                        chars.next();
+                        Some(Token::EQ)
+                    }
+                    _ => Some(Token::ASSIGN),
+                }
+            }
+            '+' => {
+                chars.next();
+                Some(Token::PLUS)
+            }
+            '-' => {
+                chars.next();
+                Some(Token::MINUS)
+            }
+            '*' => {
+                chars.next();
+                Some(Token::ASTERISK)
+            }
+            '/' => {
+                chars.next();
+                Some(Token::SLASH)
+            }
+            '!' => {
+                chars.next();
+                match chars.peek() {
+                    Some('=') => {
+                        chars.next();
+                        Some(Token::NEQ)
+                    }
+                    _ => Some(Token::BANG),
+                }
+            }
+            '<' => {
+                chars.next();
+                match chars.peek() {
+                    Some('=') => {
+                        chars.next();
+                        Some(Token::LTE)
+                    }
+                    _ => Some(Token::LT),
+                }
+            }
+            '>' => {
+                chars.next();
+                match chars.peek() {
+                    Some('=') => {
+                        chars.next();
+                        Some(Token::GTE)
+                    }
+                    _ => Some(Token::GT),
+                }
+            }
             _ => None,
-        };
-
-        if token.is_some() {
-            chars.next();
         }
-
-        token
     }
 }
 

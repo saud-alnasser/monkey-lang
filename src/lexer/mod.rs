@@ -69,7 +69,7 @@ mod tests {
 
     #[test]
     fn test_symbols() {
-        let input = " = + ( )  { } , ; ! - / * < >";
+        let input = " = + ( )  { } , ; ! - / * < > == != <= >=";
 
         let tokens = vec![
             Token::ASSIGN,
@@ -86,6 +86,10 @@ mod tests {
             Token::ASTERISK,
             Token::LT,
             Token::GT,
+            Token::EQ,
+            Token::NEQ,
+            Token::LTE,
+            Token::GTE,
             Token::EOF,
         ];
 
