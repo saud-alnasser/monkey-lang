@@ -3,7 +3,7 @@ use super::Span;
 #[derive(Debug, PartialEq)]
 pub enum Token {
     // special
-    ILLEGAL { span: Span },
+    ILLEGAL { span: Span, literal: Box<str> },
     EOF,
 
     // operators
