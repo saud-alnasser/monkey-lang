@@ -1,24 +1,16 @@
 #[derive(Debug, PartialEq, Clone)]
 pub struct Span {
     line: usize,
-    column_start: usize,
-    column_end: usize,
+    column: usize,
+    length: usize,
 }
 
 impl Span {
-    pub fn new() -> Self {
-        Self {
-            line: 1,
-            column_start: 0,
-            column_end: 0,
-        }
-    }
-
-    pub fn from(line: usize, column: usize, length: usize) -> Self {
+    pub fn new(line: usize, column: usize, length: usize) -> Self {
         Self {
             line,
-            column_start: column,
-            column_end: column + length - 1,
+            column,
+            length,
         }
     }
 
@@ -27,16 +19,27 @@ impl Span {
     }
 
     pub fn column(&self) -> usize {
-        match self.column_start {
-            0 => 1,
-            _ => self.column_start,
-        }
+        self.column
     }
 
     pub fn length(&self) -> usize {
-        match self.column_end >= self.column_start {
-            true => self.column_end - self.column_start + 1,
-            false => 0,
+        self.length
+    }
+}
+
+#[derive(Debug)]
+pub struct FramedSpan {
+    line: usize,
+    column_start: usize,
+    column_end: usize,
+}
+
+impl FramedSpan {
+    pub fn new() -> Self {
+        Self {
+            line: 1,
+            column_start: 0,
+            column_end: 0,
         }
     }
 
@@ -59,5 +62,21 @@ impl Span {
                 }
             }
         }
+    }
+
+    pub fn capture(&self) -> Span {
+        let line = self.line;
+
+        let column = match self.column_start {
+            0 => 1,
+            _ => self.column_start,
+        };
+
+        let length = match self.column_end >= self.column_start {
+            true => self.column_end - self.column_start + 1,
+            false => 0,
+        };
+
+        Span::new(line, column, length)
     }
 }
