@@ -23,8 +23,7 @@ impl Lexer<'_> {
     }
 
     pub fn next(&mut self) -> Token {
-        // NOTE: order of quantifiers is important.
-        // NOTE: direct usage of quantifiers and not using dynamic dispatch is for performance.
+        // NOTE: order of quantifiers is important, also usage of quantifiers directly is for performance.
         if let Some(_) = self.chars.peek() {
             if let Some(token) = WhitespaceQuantifier::process(&mut self.chars, &mut self.span) {
                 return token;
@@ -54,6 +53,10 @@ impl Lexer<'_> {
 
             return Token::ILLEGAL {
                 span: self.span.capture(),
+                literal: match self.chars.next() {
+                    Some(c) => c.to_string().into_boxed_str(),
+                    None => "\0".into(),
+                },
             };
         }
 
