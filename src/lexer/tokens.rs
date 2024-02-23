@@ -31,5 +31,10 @@ pub enum Token {
     // keywords & identifiers
     LET,
     FUNCTION,
+    RETURN,
+    IF,
+    ELSE,
+    TRUE,
+    FALSE,
     IDENT(Box<str>),
 }
