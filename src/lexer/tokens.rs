@@ -1,43 +1,45 @@
+use super::Span;
+
 #[derive(Debug, PartialEq)]
 pub enum Token {
     // special
-    ILLEGAL,
+    ILLEGAL { span: Span },
     EOF,
 
     // operators
-    ASSIGN,
-    PLUS,
-    MINUS,
-    ASTERISK,
-    SLASH,
-    BANG,
-    EQ,
-    NEQ,
-    LT,
-    GT,
-    LTE,
-    GTE,
+    ASSIGN { span: Span },
+    PLUS { span: Span },
+    MINUS { span: Span },
+    ASTERISK { span: Span },
+    SLASH { span: Span },
+    BANG { span: Span },
+    EQ { span: Span },
+    NEQ { span: Span },
+    LT { span: Span },
+    GT { span: Span },
+    LTE { span: Span },
+    GTE { span: Span },
 
     // delimiters
-    COMMA,
-    SEMICOLON,
+    COMMA { span: Span },
+    SEMICOLON { span: Span },
 
     // brackets
-    LPAREN,
-    RPAREN,
-    LBRACE,
-    RBRACE,
+    LPAREN { span: Span },
+    RPAREN { span: Span },
+    LBRACE { span: Span },
+    RBRACE { span: Span },
 
     // literals
-    INT(Box<str>),
+    INT { span: Span, value: Box<str> },
 
     // keywords & identifiers
-    LET,
-    FUNCTION,
-    RETURN,
-    IF,
-    ELSE,
-    TRUE,
-    FALSE,
-    IDENT(Box<str>),
+    LET { span: Span },
+    FUNCTION { span: Span },
+    RETURN { span: Span },
+    IF { span: Span },
+    ELSE { span: Span },
+    TRUE { span: Span },
+    FALSE { span: Span },
+    IDENT { span: Span, value: Box<str> },
 }

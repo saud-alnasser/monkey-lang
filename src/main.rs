@@ -1,5 +1,5 @@
-use monkey_lang::Repl;
+use monkey_lang::REPL;
 
 fn main() {
-    Repl::start();
+    REPL::start();
 }
