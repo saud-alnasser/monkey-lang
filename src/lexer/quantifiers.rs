@@ -94,6 +94,7 @@ impl Quantifier for KeywordAndIdentifiersQuantifier {
     fn process(chars: &mut Peekable<Chars>) -> Option<Token> {
         match utils::take_series_where(chars, |c| c.is_ascii_alphanumeric() || *c == '_') {
             Some(keyword) => match &keyword[..] {
+                "fn" => Some(Token::FUNCTION),
                 "let" => Some(Token::LET),
                 identifier => Some(Token::IDENT(Box::from(identifier))),
             },
