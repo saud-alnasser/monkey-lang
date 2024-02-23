@@ -28,6 +28,12 @@ impl Quantifier for OperatorsQuantifier {
         let token = match chars.peek()? {
             '=' => Some(Token::ASSIGN),
             '+' => Some(Token::PLUS),
+            '-' => Some(Token::MINUS),
+            '*' => Some(Token::ASTERISK),
+            '/' => Some(Token::SLASH),
+            '!' => Some(Token::BANG),
+            '<' => Some(Token::LT),
+            '>' => Some(Token::GT),
             _ => None,
         };
 

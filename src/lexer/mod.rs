@@ -68,8 +68,8 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_next_token() {
-        let input = " = + ( )  { } , ; ";
+    fn test_symbols() {
+        let input = " = + ( )  { } , ; ! - / * < >";
 
         let tokens = vec![
             Token::ASSIGN,
@@ -80,6 +80,12 @@ mod tests {
             Token::RBRACE,
             Token::COMMA,
             Token::SEMICOLON,
+            Token::BANG,
+            Token::MINUS,
+            Token::SLASH,
+            Token::ASTERISK,
+            Token::LT,
+            Token::GT,
             Token::EOF,
         ];
 

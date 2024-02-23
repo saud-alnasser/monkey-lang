@@ -8,6 +8,12 @@ pub enum Token {
     // operators
     ASSIGN,
     PLUS,
+    MINUS,
+    ASTERISK,
+    SLASH,
+    BANG,
+    LT,
+    GT,
 
     // delimiters
     COMMA,
