@@ -12,8 +12,12 @@ pub enum Token {
     ASTERISK,
     SLASH,
     BANG,
+    EQ,
+    NEQ,
     LT,
     GT,
+    LTE,
+    GTE,
 
     // delimiters
     COMMA,
