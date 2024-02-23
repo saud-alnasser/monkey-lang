@@ -4,6 +4,13 @@ pub enum Token {
     ILLEGAL,
     EOF,
 
+    // identifiers
+    IDENT(Box<str>),
+    INT(Box<str>),
+
+    // keywords
+    LET,
+
     // operators
     ASSIGN,
     PLUS,
@@ -31,6 +38,17 @@ impl Token {
             '{' => Token::LBRACE,
             '}' => Token::RBRACE,
             _ => Token::ILLEGAL,
+        }
+    }
+
+    pub fn from_numeric(num: &str) -> Token {
+        Token::INT(num.into())
+    }
+
+    pub fn from_literal(ident: &str) -> Token {
+        match ident {
+            "let" => Token::LET,
+            _ => Token::IDENT(ident.into()),
         }
     }
 }
