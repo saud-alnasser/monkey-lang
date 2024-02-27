@@ -45,19 +45,18 @@ jobs:
         run: cargo build --release --target ${{ matrix.target }}
 
       - name: "🗃️ set archive name (non-windows)"
-        id: archive
-        run: echo "archive_name=knope-${{ matrix.target }}" >> $GITHUB_ENV
+        if: ${{ matrix.os != 'windows-latest' }}
+        run: echo "archive_name=${{ matrix.target }}" >> $GITHUB_ENV
 
       - name: "🗃️ set archive name (windows)"
         if: ${{ matrix.os == 'windows-latest' }}
-        run: echo "archive_name=knope-${{ matrix.target }}" | Out-File -FilePath $Env:GITHUB_ENV -Encoding utf8 -Append
+        run: echo "archive_name=${{ matrix.target }}" | Out-File -FilePath $Env:GITHUB_ENV -Encoding utf8 -Append
 
       - name: "📁 create archive folder"
         run: mkdir ${{ env.archive_name }}
 
       - name: "🗂️ copy unix artifact"
-        if: ${{ matrix.os != 'windows-latest' }}
-        run: cp target/${{ matrix.target }}/release/knope ${{ env.archive_name }}
+        run: cp target/${{ matrix.target }}/release ${{ env.archive_name }}
 
       - name: "🚀 upload artifact"
         uses: actions/upload-artifact@v4
