@@ -4,12 +4,6 @@ on:
   push:
     branches: [main]
 
-permissions:
-  contents: read
-
-env:
-  CARGO_HUSKY_DONT_INSTALL_HOOKS: true
-
 jobs:
   prepare-release:
     if: "!contains(github.event.head_commit.message, 'chore: prepare release')" # skip merges from releases

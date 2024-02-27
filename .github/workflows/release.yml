@@ -5,12 +5,6 @@ on:
     types: [closed]
     branches: [main]
 
-permissions:
-  contents: write
-
-env:
-  CARGO_HUSKY_DONT_INSTALL_HOOKS: true
-
 jobs:
   build-artifacts:
     if: github.head_ref == 'release' && github.event.pull_request.merged == true

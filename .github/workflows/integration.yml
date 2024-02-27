@@ -4,9 +4,6 @@ on:
   pull_request:
     types: ["opened", "reopened", "synchronize", "edited"]
 
-env:
-  CARGO_HUSKY_DONT_INSTALL_HOOKS: true
-
 jobs:
   integration:
     timeout-minutes: 30
