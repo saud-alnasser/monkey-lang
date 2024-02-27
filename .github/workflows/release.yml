@@ -90,21 +90,3 @@ jobs:
         run: knope release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-  publish-crates:
-    needs: [release]
-
-    timeout-minutes: 30
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: "☁️ checkout repository"
-        uses: actions/checkout@v4
-
-      - name: "💿 cache cargo"
-        uses: Swatinem/rust-cache@v2
-
-      - name: "🚀 publish crates"
-        uses: katyo/publish-crates@v2
-        with:
-          registry-token: ${{ secrets.CARGO_TOKEN }}
