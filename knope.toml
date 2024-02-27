@@ -3,20 +3,16 @@ versioned_files = ["Cargo.toml"]
 changelog = "CHANGELOG.md"
 
 [[package.assets]]
-path = "artifacts/knope-x86_64-unknown-linux-musl.tgz"
-name = "x86_64-linux-musl.tgz"
+path = "artifacts/x86_64-unknown-linux-musl.tgz"
 
 [[package.assets]]
-path = "artifacts/knope-x86_64-pc-windows-msvc.tgz"
-name = "x86_64-windows-msvc.tgz"
+path = "artifacts/x86_64-pc-windows-msvc.tgz"
 
 [[package.assets]]
-path = "artifacts/knope-x86_64-apple-darwin.tgz"
-name = "x86_64-apple-darwin.tgz"
+path = "artifacts/x86_64-apple-darwin.tgz"
 
 [[package.assets]]
-path = "artifacts/knope-aarch64-apple-darwin.tgz"
-name = "aarch64-apple-darwin.tgz"
+path = "artifacts/aarch64-apple-darwin.tgz"
 
 [[workflows]]
 name = "document-change"
