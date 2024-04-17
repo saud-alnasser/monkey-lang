@@ -1,6 +1,6 @@
 use std::{error::Error, iter::Peekable};
 
-use crate::{Lexer, Token};
+use crate::{lexer::TokenKind, Lexer, Token};
 
 use super::{Expression, Statement};
 
@@ -15,7 +15,10 @@ pub struct LetStatementQuantifier;
 impl Quantifier for LetStatementQuantifier {
     fn is_applicable(&self, lexer: &mut Peekable<Lexer>) -> bool {
         match lexer.peek() {
-            Some(Token::LET { .. }) => true,
+            Some(Token {
+                kind: TokenKind::LET,
+                ..
+            }) => true,
             _ => false,
         }
     }
@@ -27,24 +30,38 @@ impl Quantifier for LetStatementQuantifier {
         };
 
         let identifier = match lexer.next() {
-            Some(Token::IDENT { value, .. }) => value,
+            Some(Token {
+                kind: TokenKind::IDENT,
+                literal,
+                ..
+            }) => literal,
             _ => return Err("Expected identifier".into()),
         };
 
         match lexer.next() {
-            Some(Token::ASSIGN { .. }) => (),
+            Some(Token {
+                kind: TokenKind::ASSIGN,
+                ..
+            }) => (),
             _ => return Err("Expected assignment operator".into()),
         }
 
         // TODO: manage all kinds of expressions
 
         let expression = match lexer.next() {
-            Some(Token::INT { value, .. }) => Expression::INT { value },
+            Some(Token {
+                kind: TokenKind::INT,
+                literal,
+                ..
+            }) => Expression::INT { value: literal },
             _ => return Err("Expected expression".into()),
         };
 
         match lexer.next() {
-            Some(Token::SEMICOLON { .. }) => (),
+            Some(Token {
+                kind: TokenKind::SEMICOLON,
+                ..
+            }) => (),
             _ => return Err("Expected semicolon".into()),
         }
 

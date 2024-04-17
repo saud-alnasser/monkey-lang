@@ -1,4 +1,4 @@
-use crate::{Lexer, Token};
+use crate::{lexer::TokenKind, Lexer, Token};
 use std::io::{self, Write};
 
 pub struct REPL;
@@ -14,13 +14,23 @@ impl REPL {
 
             let tokens: Vec<Token> = Lexer::new(input.trim()).collect();
 
-            let illegal: Option<&Token> = tokens
-                .iter()
-                .find(|token| matches!(token, Token::ILLEGAL { .. }));
+            let illegal: Option<&Token> = tokens.iter().find(|token| {
+                matches!(
+                    token,
+                    Token {
+                        kind: TokenKind::ILLEGAL,
+                        ..
+                    }
+                )
+            });
 
             match illegal {
                 Some(token) => match token {
-                    Token::ILLEGAL { span, literal } => {
+                    Token {
+                        span,
+                        kind: TokenKind::ILLEGAL,
+                        literal,
+                    } => {
                         println!("illegal {:?} at {}:{}", literal, span.line(), span.column());
 
                         input.clear();

@@ -3,7 +3,7 @@ mod quantifiers;
 
 pub use self::ast::*;
 use self::quantifiers::Quantifier;
-use crate::{Lexer, Token};
+use crate::{lexer::TokenKind, Lexer, Token};
 use std::{error::Error, iter::Peekable};
 
 pub struct Parser<'a> {
@@ -24,7 +24,10 @@ impl<'a> Parser<'a> {
 
         while let Some(token) = self.lexer.peek() {
             match token {
-                Token::EOF => break,
+                Token {
+                    kind: TokenKind::EOF,
+                    ..
+                } => break,
                 _ => {
                     for quantifier in &self.quantifiers {
                         if quantifier.is_applicable(&mut self.lexer) {

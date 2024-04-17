@@ -1,16 +1,21 @@
-use super::{utils, FramedSpan, Token};
+use super::{utils, Token, TokenKind, TokenSpanTracker};
 use std::{iter::Peekable, str::Chars};
 
 pub trait Quantifier {
-    fn process(&self, chars: &mut Peekable<Chars>, span: &mut FramedSpan) -> Option<Token>;
+    fn process(&self, chars: &mut Peekable<Chars>, tracker: &mut TokenSpanTracker)
+        -> Option<Token>;
 }
 
 pub struct WhitespaceQuantifier;
 
 impl Quantifier for WhitespaceQuantifier {
-    fn process(&self, chars: &mut Peekable<Chars>, span: &mut FramedSpan) -> Option<Token> {
+    fn process(
+        &self,
+        chars: &mut Peekable<Chars>,
+        tracker: &mut TokenSpanTracker,
+    ) -> Option<Token> {
         if let Some(whitespace) = utils::take_series_where(chars, |c| c.is_whitespace()) {
-            span.advance(&whitespace);
+            tracker.advance(&whitespace);
         }
 
         None
@@ -20,52 +25,68 @@ impl Quantifier for WhitespaceQuantifier {
 pub struct OperatorsQuantifier;
 
 impl Quantifier for OperatorsQuantifier {
-    fn process(&self, chars: &mut Peekable<Chars>, span: &mut FramedSpan) -> Option<Token> {
+    fn process(
+        &self,
+        chars: &mut Peekable<Chars>,
+        tracker: &mut TokenSpanTracker,
+    ) -> Option<Token> {
         match chars.peek()? {
             '=' => {
                 chars.next();
                 match chars.peek() {
                     Some('=') => {
                         chars.next();
-                        span.advance("==");
-                        Some(Token::EQ {
-                            span: span.capture(),
+                        tracker.advance("==");
+                        Some(Token {
+                            span: tracker.capture(),
+                            kind: TokenKind::EQ,
+                            literal: "==".into(),
                         })
                     }
                     _ => {
-                        span.advance("=");
-                        Some(Token::ASSIGN {
-                            span: span.capture(),
+                        tracker.advance("=");
+                        Some(Token {
+                            span: tracker.capture(),
+                            kind: TokenKind::ASSIGN,
+                            literal: "=".into(),
                         })
                     }
                 }
             }
             '+' => {
                 chars.next();
-                span.advance("+");
-                Some(Token::PLUS {
-                    span: span.capture(),
+                tracker.advance("+");
+                Some(Token {
+                    span: tracker.capture(),
+                    kind: TokenKind::PLUS,
+                    literal: "+".into(),
                 })
             }
             '-' => {
                 chars.next();
-                span.advance("-");
-                Some(Token::MINUS {
-                    span: span.capture(),
+                tracker.advance("-");
+                Some(Token {
+                    span: tracker.capture(),
+                    kind: TokenKind::MINUS,
+                    literal: "-".into(),
                 })
             }
             '*' => {
                 chars.next();
-                span.advance("*");
-                Some(Token::ASTERISK {
-                    span: span.capture(),
+                tracker.advance("*");
+                Some(Token {
+                    span: tracker.capture(),
+                    kind: TokenKind::ASTERISK,
+                    literal: "*".into(),
                 })
             }
             '/' => {
                 chars.next();
-                span.advance("/");
-                Some(Token::SLASH {
-                    span: span.capture(),
+                tracker.advance("/");
+                Some(Token {
+                    span: tracker.capture(),
+                    kind: TokenKind::SLASH,
+                    literal: "/".into(),
                 })
             }
             '!' => {
@@ -73,15 +94,19 @@ impl Quantifier for OperatorsQuantifier {
                 match chars.peek() {
                     Some('=') => {
                         chars.next();
-                        span.advance("!=");
-                        Some(Token::NEQ {
-                            span: span.capture(),
+                        tracker.advance("!=");
+                        Some(Token {
+                            span: tracker.capture(),
+                            kind: TokenKind::NEQ,
+                            literal: "!=".into(),
                         })
                     }
                     _ => {
-                        span.advance("!");
-                        Some(Token::BANG {
-                            span: span.capture(),
+                        tracker.advance("!");
+                        Some(Token {
+                            span: tracker.capture(),
+                            kind: TokenKind::BANG,
+                            literal: "!".into(),
                         })
                     }
                 }
@@ -91,15 +116,19 @@ impl Quantifier for OperatorsQuantifier {
                 match chars.peek() {
                     Some('=') => {
                         chars.next();
-                        span.advance("<=");
-                        Some(Token::LTE {
-                            span: span.capture(),
+                        tracker.advance("<=");
+                        Some(Token {
+                            span: tracker.capture(),
+                            kind: TokenKind::LTE,
+                            literal: "<=".into(),
                         })
                     }
                     _ => {
-                        span.advance("<");
-                        Some(Token::LT {
-                            span: span.capture(),
+                        tracker.advance("<");
+                        Some(Token {
+                            span: tracker.capture(),
+                            kind: TokenKind::LT,
+                            literal: "<".into(),
                         })
                     }
                 }
@@ -109,15 +138,19 @@ impl Quantifier for OperatorsQuantifier {
                 match chars.peek() {
                     Some('=') => {
                         chars.next();
-                        span.advance(">=");
-                        Some(Token::GTE {
-                            span: span.capture(),
+                        tracker.advance(">=");
+                        Some(Token {
+                            span: tracker.capture(),
+                            kind: TokenKind::GTE,
+                            literal: ">=".into(),
                         })
                     }
                     _ => {
-                        span.advance(">");
-                        Some(Token::GT {
-                            span: span.capture(),
+                        tracker.advance(">");
+                        Some(Token {
+                            span: tracker.capture(),
+                            kind: TokenKind::GT,
+                            literal: ">".into(),
                         })
                     }
                 }
@@ -130,20 +163,28 @@ impl Quantifier for OperatorsQuantifier {
 pub struct DelimitersQuantifier;
 
 impl Quantifier for DelimitersQuantifier {
-    fn process(&self, chars: &mut Peekable<Chars>, span: &mut FramedSpan) -> Option<Token> {
+    fn process(
+        &self,
+        chars: &mut Peekable<Chars>,
+        tracker: &mut TokenSpanTracker,
+    ) -> Option<Token> {
         match chars.peek()? {
             ',' => {
                 chars.next();
-                span.advance(",");
-                Some(Token::COMMA {
-                    span: span.capture(),
+                tracker.advance(",");
+                Some(Token {
+                    span: tracker.capture(),
+                    kind: TokenKind::COMMA,
+                    literal: ",".into(),
                 })
             }
             ';' => {
                 chars.next();
-                span.advance(";");
-                Some(Token::SEMICOLON {
-                    span: span.capture(),
+                tracker.advance(";");
+                Some(Token {
+                    span: tracker.capture(),
+                    kind: TokenKind::SEMICOLON,
+                    literal: ";".into(),
                 })
             }
             _ => None,
@@ -154,34 +195,46 @@ impl Quantifier for DelimitersQuantifier {
 pub struct BracketsQuantifier;
 
 impl Quantifier for BracketsQuantifier {
-    fn process(&self, chars: &mut Peekable<Chars>, span: &mut FramedSpan) -> Option<Token> {
+    fn process(
+        &self,
+        chars: &mut Peekable<Chars>,
+        tracker: &mut TokenSpanTracker,
+    ) -> Option<Token> {
         match chars.peek()? {
             '(' => {
                 chars.next();
-                span.advance("(");
-                Some(Token::LPAREN {
-                    span: span.capture(),
+                tracker.advance("(");
+                Some(Token {
+                    span: tracker.capture(),
+                    kind: TokenKind::LPAREN,
+                    literal: "(".into(),
                 })
             }
             ')' => {
                 chars.next();
-                span.advance(")");
-                Some(Token::RPAREN {
-                    span: span.capture(),
+                tracker.advance(")");
+                Some(Token {
+                    span: tracker.capture(),
+                    kind: TokenKind::RPAREN,
+                    literal: ")".into(),
                 })
             }
             '{' => {
                 chars.next();
-                span.advance("{");
-                Some(Token::LBRACE {
-                    span: span.capture(),
+                tracker.advance("{");
+                Some(Token {
+                    span: tracker.capture(),
+                    kind: TokenKind::LBRACE,
+                    literal: "{".into(),
                 })
             }
             '}' => {
                 chars.next();
-                span.advance("}");
-                Some(Token::RBRACE {
-                    span: span.capture(),
+                tracker.advance("}");
+                Some(Token {
+                    span: tracker.capture(),
+                    kind: TokenKind::RBRACE,
+                    literal: "}".into(),
                 })
             }
             _ => None,
@@ -192,14 +245,19 @@ impl Quantifier for BracketsQuantifier {
 pub struct LiteralsQuantifier;
 
 impl Quantifier for LiteralsQuantifier {
-    fn process(&self, chars: &mut Peekable<Chars>, span: &mut FramedSpan) -> Option<Token> {
+    fn process(
+        &self,
+        chars: &mut Peekable<Chars>,
+        tracker: &mut TokenSpanTracker,
+    ) -> Option<Token> {
         match utils::take_series_where(chars, |c| c.is_ascii_digit()) {
             Some(literal) => {
-                span.advance(&literal);
+                tracker.advance(&literal);
 
-                Some(Token::INT {
-                    span: span.capture(),
-                    value: Box::from(literal),
+                Some(Token {
+                    span: tracker.capture(),
+                    kind: TokenKind::INT,
+                    literal,
                 })
             }
             None => None,
@@ -210,36 +268,55 @@ impl Quantifier for LiteralsQuantifier {
 pub struct KeywordAndIdentifiersQuantifier;
 
 impl Quantifier for KeywordAndIdentifiersQuantifier {
-    fn process(&self, chars: &mut Peekable<Chars>, span: &mut FramedSpan) -> Option<Token> {
+    fn process(
+        &self,
+        chars: &mut Peekable<Chars>,
+        tracker: &mut TokenSpanTracker,
+    ) -> Option<Token> {
         match utils::take_series_where(chars, |c| c.is_ascii_alphanumeric() || *c == '_') {
             Some(keyword) => {
-                span.advance(&keyword);
+                tracker.advance(&keyword);
 
                 match &keyword[..] {
-                    "let" => Some(Token::LET {
-                        span: span.capture(),
+                    "let" => Some(Token {
+                        span: tracker.capture(),
+                        kind: TokenKind::LET,
+                        literal: "let".into(),
                     }),
-                    "fn" => Some(Token::FUNCTION {
-                        span: span.capture(),
+                    "fn" => Some(Token {
+                        span: tracker.capture(),
+                        kind: TokenKind::FUNCTION,
+                        literal: "fn".into(),
                     }),
-                    "return" => Some(Token::RETURN {
-                        span: span.capture(),
+                    "return" => Some(Token {
+                        span: tracker.capture(),
+                        kind: TokenKind::RETURN,
+                        literal: "return".into(),
                     }),
-                    "if" => Some(Token::IF {
-                        span: span.capture(),
+                    "if" => Some(Token {
+                        span: tracker.capture(),
+                        kind: TokenKind::IF,
+                        literal: "if".into(),
                     }),
-                    "else" => Some(Token::ELSE {
-                        span: span.capture(),
+                    "else" => Some(Token {
+                        span: tracker.capture(),
+                        kind: TokenKind::ELSE,
+                        literal: "else".into(),
                     }),
-                    "true" => Some(Token::TRUE {
-                        span: span.capture(),
+                    "true" => Some(Token {
+                        span: tracker.capture(),
+                        kind: TokenKind::TRUE,
+                        literal: "true".into(),
                     }),
-                    "false" => Some(Token::FALSE {
-                        span: span.capture(),
+                    "false" => Some(Token {
+                        span: tracker.capture(),
+                        kind: TokenKind::FALSE,
+                        literal: "false".into(),
                     }),
-                    identifier => Some(Token::IDENT {
-                        span: span.capture(),
-                        value: Box::from(identifier),
+                    identifier => Some(Token {
+                        span: tracker.capture(),
+                        kind: TokenKind::IDENT,
+                        literal: identifier.into(),
                     }),
                 }
             }
