@@ -119,10 +119,7 @@ impl Iterator for Lexer<'_> {
 
     fn next(&mut self) -> Option<Self::Item> {
         match self.next() {
-            Token {
-                kind: TokenKind::EOF,
-                ..
-            } => None,
+            token if token.kind == TokenKind::EOF => None,
             token => Some(token),
         }
     }
