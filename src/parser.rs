@@ -265,4 +265,60 @@ mod tests {
             }
         }
     }
+
+    #[test]
+    fn test_parsing_infix_expressions() {
+        let input = "5 + 5; 5 - 5; 5 * 5; 5 / 5; 5 > 5; 5 < 5; 5 == 5; 5 != 5;";
+
+        let lexer = Lexer::new(input);
+        let mut parser = Parser::new(lexer);
+
+        let program = parser.parse().unwrap();
+
+        assert_eq!(program.statements.len(), 8);
+
+        let expected = [
+            (TokenKind::INT, 5, TokenKind::PLUS, 5),
+            (TokenKind::INT, 5, TokenKind::MINUS, 5),
+            (TokenKind::INT, 5, TokenKind::ASTERISK, 5),
+            (TokenKind::INT, 5, TokenKind::SLASH, 5),
+            (TokenKind::INT, 5, TokenKind::GT, 5),
+            (TokenKind::INT, 5, TokenKind::LT, 5),
+            (TokenKind::INT, 5, TokenKind::EQ, 5),
+            (TokenKind::INT, 5, TokenKind::NEQ, 5),
+        ];
+
+        for (i, (_, left_value, operator_kind, right_value)) in expected.iter().enumerate() {
+            let statement = &program.statements[i];
+
+            match statement {
+                Statement::Expression { expression, .. } => match expression {
+                    Expression::INFIX {
+                        left,
+                        operator,
+                        right,
+                        ..
+                    } => {
+                        match left.as_ref() {
+                            Expression::INT { value, .. } => {
+                                assert_eq!(value, left_value);
+                            }
+                            _ => unreachable!(),
+                        }
+
+                        assert_eq!(operator.kind, *operator_kind);
+
+                        match right.as_ref() {
+                            Expression::INT { value, .. } => {
+                                assert_eq!(value, right_value);
+                            }
+                            _ => unreachable!(),
+                        }
+                    }
+                    _ => unreachable!(),
+                },
+                _ => unreachable!(),
+            }
+        }
+    }
 }
