@@ -5,20 +5,6 @@ pub struct TokenSpan {
     pub length: usize,
 }
 
-impl TokenSpan {
-    pub fn line(&self) -> usize {
-        self.line
-    }
-
-    pub fn column(&self) -> usize {
-        self.column
-    }
-
-    pub fn length(&self) -> usize {
-        self.length
-    }
-}
-
 #[derive(Debug, PartialEq)]
 pub enum TokenKind {
     // special
@@ -68,4 +54,48 @@ pub struct Token {
     pub span: TokenSpan,
     pub kind: TokenKind,
     pub literal: Box<str>,
+}
+
+pub enum Expression {
+    IDENT {
+        token: Token,
+        value: Box<str>,
+    },
+    INT {
+        token: Token,
+        value: i64,
+    },
+    PREFIX {
+        token: Token,
+        operator: TokenKind,
+        right: Box<Expression>,
+    },
+}
+
+pub enum Statement {
+    Let {
+        token: Token,
+        identifier: Box<str>,
+        expression: Expression,
+    },
+    Return {
+        token: Token,
+        expression: Expression,
+    },
+    Expression {
+        token: Token,
+        expression: Expression,
+    },
+}
+
+pub struct Program {
+    pub statements: Vec<Statement>,
+}
+
+impl Program {
+    pub fn new() -> Self {
+        Program {
+            statements: Vec::new(),
+        }
+    }
 }
