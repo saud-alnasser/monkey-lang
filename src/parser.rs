@@ -1,4 +1,4 @@
-use std::{error::Error, iter::Peekable};
+use std::{borrow::Borrow, error::Error, iter::Peekable};
 
 use crate::{Expression, Lexer, Program, Statement, TokenKind};
 
@@ -17,21 +17,21 @@ impl<'a> Parser<'a> {
         match lexer.peek() {
             Some(token) if token.kind == TokenKind::IDENT => {
                 let token = lexer.next().unwrap();
-                let literal = token.literal.clone();
+                let value = token.literal.clone();
 
-                Ok(Expression::IDENT {
-                    token: token,
-                    value: literal,
-                })
+                Ok(Expression::IDENT { token, value })
             }
             Some(token) if token.kind == TokenKind::INT => {
                 let token = lexer.next().unwrap();
-                let literal = token.literal.parse::<i64>()?;
+                let value = token.literal.parse::<i64>()?;
 
-                Ok(Expression::INT {
-                    token: token,
-                    value: literal,
-                })
+                Ok(Expression::INT { token, value })
+            }
+            Some(token) if token.kind == TokenKind::MINUS || token.kind == TokenKind::BANG => {
+                let operator = lexer.next().unwrap();
+                let right = Box::new(Parser::parse_expression(lexer)?);
+
+                Ok(Expression::PREFIX { operator, right })
             }
             _ => Err("Expected expression".into()),
         }
@@ -250,7 +250,7 @@ mod tests {
                     Expression::PREFIX {
                         operator, right, ..
                     } => {
-                        assert_eq!(operator, expected_operator);
+                        assert_eq!(operator.kind, *expected_operator);
 
                         match right.as_ref() {
                             Expression::INT { value, .. } => {

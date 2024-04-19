@@ -66,8 +66,7 @@ pub enum Expression {
         value: i64,
     },
     PREFIX {
-        token: Token,
-        operator: TokenKind,
+        operator: Token,
         right: Box<Expression>,
     },
 }
