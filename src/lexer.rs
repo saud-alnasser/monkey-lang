@@ -63,6 +63,8 @@ impl SpanTracker {
 pub struct Lexer<'a> {
     chars: Peekable<Chars<'a>>,
     span: SpanTracker,
+    peeked: Option<Token>,
+    exhausted: bool,
 }
 
 impl Lexer<'_> {
@@ -70,6 +72,8 @@ impl Lexer<'_> {
         Lexer {
             chars: input.trim().chars().peekable(),
             span: SpanTracker::new(),
+            peeked: None,
+            exhausted: false,
         }
     }
 
@@ -345,46 +349,67 @@ impl Lexer<'_> {
         }
     }
 
-    pub fn next(&mut self) -> Token {
+    fn advance(&mut self) -> Option<Token> {
+        if self.exhausted {
+            return None;
+        }
+
         Lexer::consume_whitespace(&mut self.chars, &mut self.span);
 
         if let Some(token) = Lexer::consume_operators(&mut self.chars, &mut self.span) {
-            return token;
+            return Some(token);
         };
 
         if let Some(token) = Lexer::consume_delimiters(&mut self.chars, &mut self.span) {
-            return token;
+            return Some(token);
         }
 
         if let Some(token) = Lexer::consume_brackets(&mut self.chars, &mut self.span) {
-            return token;
+            return Some(token);
         }
 
         if let Some(token) = Lexer::consume_literals(&mut self.chars, &mut self.span) {
-            return token;
+            return Some(token);
         }
 
         if let Some(token) =
             Lexer::consume_keywords_and_identifiers(&mut self.chars, &mut self.span)
         {
-            return token;
+            return Some(token);
         }
 
+        self.exhausted = true;
+
         if self.chars.peek().is_some() {
-            return Token {
+            return Some(Token {
                 span: self.span.capture(),
                 kind: TokenKind::ILLEGAL,
                 literal: match self.chars.next() {
                     Some(c) => c.to_string().into_boxed_str(),
                     None => "\0".into(),
                 },
-            };
+            });
         }
 
-        Token {
+        Some(Token {
             span: self.span.capture(),
             kind: TokenKind::EOF,
             literal: "\0".into(),
+        })
+    }
+
+    pub fn peek(&mut self) -> Option<&Token> {
+        if self.peeked.is_none() {
+            self.peeked = self.advance();
+        }
+
+        self.peeked.as_ref()
+    }
+
+    pub fn next(&mut self) -> Option<Token> {
+        match self.peeked.take() {
+            Some(token) => Some(token),
+            None => self.advance(),
         }
     }
 }
@@ -393,10 +418,7 @@ impl Iterator for Lexer<'_> {
     type Item = Token;
 
     fn next(&mut self) -> Option<Self::Item> {
-        match self.next() {
-            token if token.kind == TokenKind::EOF => None,
-            token => Some(token),
-        }
+        self.next()
     }
 }
 
@@ -576,7 +598,7 @@ mod tests {
         let mut lexer = Lexer::new(input);
 
         for expected in tokens {
-            let actual = lexer.next();
+            let actual = lexer.next().unwrap();
             assert_eq!(actual, expected);
         }
     }
@@ -636,7 +658,8 @@ mod tests {
         let mut lexer = Lexer::new(input);
 
         for expected in tokens {
-            let actual = lexer.next();
+            let actual = lexer.next().unwrap();
+
             assert_eq!(actual, expected);
         }
     }
@@ -858,7 +881,7 @@ mod tests {
         let mut lexer = Lexer::new(input);
 
         for expected in tokens {
-            let actual = lexer.next();
+            let actual = lexer.next().unwrap();
             assert_eq!(actual, expected);
         }
     }
@@ -1026,7 +1049,7 @@ mod tests {
         let mut lexer = Lexer::new(input);
 
         for expected in tokens {
-            let actual = lexer.next();
+            let actual = lexer.next().unwrap();
             assert_eq!(actual, expected);
         }
     }

@@ -1,19 +1,17 @@
-use std::{borrow::Borrow, error::Error, iter::Peekable};
+use std::error::Error;
 
 use crate::{Expression, Lexer, Program, Statement, TokenKind};
 
 pub struct Parser<'a> {
-    lexer: Peekable<Lexer<'a>>,
+    lexer: Lexer<'a>,
 }
 
 impl<'a> Parser<'a> {
     pub fn new(lexer: Lexer<'a>) -> Self {
-        Parser {
-            lexer: lexer.peekable(),
-        }
+        Parser { lexer }
     }
 
-    fn parse_expression(lexer: &mut Peekable<Lexer>) -> Result<Expression, Box<dyn Error>> {
+    fn parse_expression(lexer: &mut Lexer) -> Result<Expression, Box<dyn Error>> {
         match lexer.peek() {
             Some(token) if token.kind == TokenKind::IDENT => {
                 let token = lexer.next().unwrap();
@@ -37,7 +35,7 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn parse_statement(lexer: &mut Peekable<Lexer>) -> Result<Statement, Box<dyn Error>> {
+    fn parse_statement(lexer: &mut Lexer) -> Result<Statement, Box<dyn Error>> {
         match lexer.peek() {
             Some(token) if token.kind == TokenKind::LET => {
                 let token = match lexer.next() {
