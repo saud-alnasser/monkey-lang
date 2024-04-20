@@ -56,6 +56,36 @@ pub struct Token {
     pub literal: Box<str>,
 }
 
+#[derive(Debug, PartialEq, PartialOrd, Eq, Ord, Copy, Clone)]
+pub enum Precedence {
+    LOWEST = 1,
+    EQUIVALENCE = 2, // equivalence: == or !=
+    COMPARISON = 3,  // comparison: > or <
+    SUM = 4,         // sum: + or -
+    PRODUCT = 5,     // product: * or /
+    PREFIX = 6,      // prefix: -X or !X
+    CALL = 7,        // call: myFunction(X)
+}
+
+impl From<TokenKind> for Precedence {
+    fn from(kind: TokenKind) -> Self {
+        match kind {
+            TokenKind::EQ | TokenKind::NEQ => Precedence::EQUIVALENCE,
+            TokenKind::LT | TokenKind::GT => Precedence::COMPARISON,
+            TokenKind::PLUS | TokenKind::MINUS => Precedence::SUM,
+            TokenKind::ASTERISK | TokenKind::SLASH => Precedence::PRODUCT,
+            _ => Precedence::LOWEST,
+        }
+    }
+}
+
+impl From<Token> for Precedence {
+    fn from(token: Token) -> Self {
+        Precedence::from(token.kind)
+    }
+}
+
+#[derive(Debug, PartialEq)]
 pub enum Expression {
     IDENT {
         token: Token,
@@ -69,8 +99,14 @@ pub enum Expression {
         operator: Token,
         right: Box<Expression>,
     },
+    INFIX {
+        operator: Token,
+        left: Box<Expression>,
+        right: Box<Expression>,
+    },
 }
 
+#[derive(Debug, PartialEq)]
 pub enum Statement {
     Let {
         token: Token,
