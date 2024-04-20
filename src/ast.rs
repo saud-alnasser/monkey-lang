@@ -5,7 +5,7 @@ pub struct TokenSpan {
     pub length: usize,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum TokenKind {
     // special
     ILLEGAL,
@@ -49,14 +49,14 @@ pub enum TokenKind {
     IDENT,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct Token {
     pub span: TokenSpan,
     pub kind: TokenKind,
     pub literal: Box<str>,
 }
 
-#[derive(Debug, PartialEq, PartialOrd, Eq, Ord, Copy, Clone)]
+#[derive(Debug, PartialEq, PartialOrd, Eq, Ord, Clone)]
 pub enum Precedence {
     LOWEST = 1,
     EQUIVALENCE = 2, // equivalence: == or !=
@@ -64,11 +64,11 @@ pub enum Precedence {
     SUM = 4,         // sum: + or -
     PRODUCT = 5,     // product: * or /
     PREFIX = 6,      // prefix: -X or !X
-    CALL = 7,        // call: myFunction(X)
+    CALL = 7,        // call: func(X)
 }
 
-impl From<TokenKind> for Precedence {
-    fn from(kind: TokenKind) -> Self {
+impl From<&TokenKind> for Precedence {
+    fn from(kind: &TokenKind) -> Self {
         match kind {
             TokenKind::EQ | TokenKind::NEQ => Precedence::EQUIVALENCE,
             TokenKind::LT | TokenKind::GT => Precedence::COMPARISON,
@@ -79,13 +79,7 @@ impl From<TokenKind> for Precedence {
     }
 }
 
-impl From<Token> for Precedence {
-    fn from(token: Token) -> Self {
-        Precedence::from(token.kind)
-    }
-}
-
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum Expression {
     IDENT {
         token: Token,
@@ -106,7 +100,7 @@ pub enum Expression {
     },
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum Statement {
     Let {
         token: Token,
@@ -123,6 +117,7 @@ pub enum Statement {
     },
 }
 
+#[derive(Debug)]
 pub struct Program {
     pub statements: Vec<Statement>,
 }

@@ -1,6 +1,6 @@
 use std::error::Error;
 
-use crate::{Expression, Lexer, Program, Statement, TokenKind};
+use crate::{Expression, Lexer, Precedence, Program, Statement, TokenKind};
 
 pub struct Parser<'a> {
     lexer: Lexer<'a>,
@@ -11,28 +11,48 @@ impl<'a> Parser<'a> {
         Parser { lexer }
     }
 
-    fn parse_expression(lexer: &mut Lexer) -> Result<Expression, Box<dyn Error>> {
-        match lexer.peek() {
+    fn parse_expression(
+        lexer: &mut Lexer,
+        precedence: Precedence,
+    ) -> Result<Expression, Box<dyn Error>> {
+        let mut left = match lexer.peek() {
             Some(token) if token.kind == TokenKind::IDENT => {
                 let token = lexer.next().unwrap();
                 let value = token.literal.clone();
 
-                Ok(Expression::IDENT { token, value })
+                Expression::IDENT { token, value }
             }
             Some(token) if token.kind == TokenKind::INT => {
                 let token = lexer.next().unwrap();
                 let value = token.literal.parse::<i64>()?;
 
-                Ok(Expression::INT { token, value })
+                Expression::INT { token, value }
             }
             Some(token) if token.kind == TokenKind::MINUS || token.kind == TokenKind::BANG => {
                 let operator = lexer.next().unwrap();
-                let right = Box::new(Parser::parse_expression(lexer)?);
+                let right = Box::new(Parser::parse_expression(lexer, Precedence::PREFIX)?);
 
-                Ok(Expression::PREFIX { operator, right })
+                Expression::PREFIX { operator, right }
             }
-            _ => Err("Expected expression".into()),
+            _ => return Err("Expected expression".into()),
+        };
+
+        while let Some(next) = lexer.peek() {
+            if precedence >= Precedence::from(&next.kind) {
+                break;
+            }
+
+            let operator = lexer.next().unwrap();
+            let right = Parser::parse_expression(lexer, Precedence::from(&operator.kind))?;
+
+            left = Expression::INFIX {
+                operator: operator,
+                left: Box::new(left),
+                right: Box::new(right),
+            };
         }
+
+        Ok(left)
     }
 
     fn parse_statement(lexer: &mut Lexer) -> Result<Statement, Box<dyn Error>> {
@@ -53,7 +73,7 @@ impl<'a> Parser<'a> {
                     _ => return Err("Expected assignment operator".into()),
                 }
 
-                let expression = Parser::parse_expression(lexer)?;
+                let expression = Parser::parse_expression(lexer, Precedence::LOWEST)?;
 
                 match lexer.next() {
                     Some(token) if token.kind == TokenKind::SEMICOLON => (),
@@ -72,7 +92,7 @@ impl<'a> Parser<'a> {
                     _ => return Err("Expected keyword return".into()),
                 };
 
-                let expression = Parser::parse_expression(lexer)?;
+                let expression = Parser::parse_expression(lexer, Precedence::LOWEST)?;
 
                 match lexer.next() {
                     Some(token) if token.kind == TokenKind::SEMICOLON => (),
@@ -82,16 +102,13 @@ impl<'a> Parser<'a> {
                 Ok(Statement::Return { token, expression })
             }
             _ => {
-                let token = match lexer.next() {
-                    Some(token)
-                        if token.kind != TokenKind::LET && token.kind != TokenKind::RETURN =>
-                    {
-                        token
-                    }
+                let token = match lexer.peek() {
+                    Some(token) => token,
                     _ => return Err("Expected a token".into()),
-                };
+                }
+                .clone();
 
-                let expression = Parser::parse_expression(lexer)?;
+                let expression = Parser::parse_expression(lexer, Precedence::LOWEST)?;
 
                 match lexer.next() {
                     Some(token) if token.kind == TokenKind::SEMICOLON => (),
@@ -109,6 +126,14 @@ impl<'a> Parser<'a> {
         while let Some(token) = self.lexer.peek() {
             if token.kind == TokenKind::EOF {
                 break;
+            }
+
+            if token.kind == TokenKind::ILLEGAL {
+                return Err(format!(
+                    "\"{}\" at {}:{} is an illegal token",
+                    token.literal, token.span.line, token.span.column
+                )
+                .into());
             }
 
             program
@@ -137,14 +162,25 @@ mod tests {
 
         assert_eq!(program.statements.len(), 2);
 
-        let expected = ["x", "y"];
+        let expected = [("x", 5), ("y", 10)];
 
-        for (i, expected) in expected.iter().enumerate() {
+        for (i, (expected_identifier, expected_value)) in expected.iter().enumerate() {
             let statement = &program.statements[i];
 
             match statement {
-                Statement::Let { identifier, .. } => {
-                    assert_eq!(**identifier, **expected);
+                Statement::Let {
+                    identifier,
+                    expression,
+                    ..
+                } => {
+                    assert_eq!(**identifier, **expected_identifier);
+
+                    match expression {
+                        Expression::INT { value, .. } => {
+                            assert_eq!(value, expected_value);
+                        }
+                        _ => unreachable!(),
+                    }
                 }
                 _ => unreachable!(),
             }
