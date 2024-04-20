@@ -1,18 +1,74 @@
 mod quantifiers;
-mod span;
-mod tokens;
+mod token;
 mod utils;
 
 use quantifiers::*;
-pub use span::*;
-pub use tokens::*;
+pub use token::*;
 
 use std::{iter::Peekable, str::Chars};
+
+#[derive(Debug)]
+pub struct TokenSpanTracker {
+    line: usize,
+    column_start: usize,
+    column_end: usize,
+}
+
+impl TokenSpanTracker {
+    pub fn new() -> Self {
+        Self {
+            line: 1,
+            column_start: 0,
+            column_end: 0,
+        }
+    }
+
+    pub fn advance(&mut self, literal: &str) {
+        let mut chars = literal.chars().peekable();
+
+        if let Some(_) = chars.peek() {
+            self.column_start = self.column_end + 1;
+        }
+
+        while let Some(c) = chars.next() {
+            match c {
+                '\n' => {
+                    self.line += 1;
+                    self.column_start = 0;
+                    self.column_end = 0;
+                }
+                _ => {
+                    self.column_end += 1;
+                }
+            }
+        }
+    }
+
+    pub fn capture(&self) -> TokenSpan {
+        let line = self.line;
+
+        let column = match self.column_start {
+            0 => 1,
+            _ => self.column_start,
+        };
+
+        let length = match self.column_end >= self.column_start {
+            true => self.column_end - self.column_start + 1,
+            false => 0,
+        };
+
+        TokenSpan {
+            line,
+            column,
+            length,
+        }
+    }
+}
 
 pub struct Lexer<'a> {
     quantifiers: Vec<Box<dyn Quantifier>>,
     chars: Peekable<Chars<'a>>,
-    span: FramedSpan,
+    tracker: TokenSpanTracker,
 }
 
 impl Lexer<'_> {
@@ -28,20 +84,21 @@ impl Lexer<'_> {
                 Box::new(KeywordAndIdentifiersQuantifier),
             ],
             chars: input.trim().chars().peekable(),
-            span: FramedSpan::new(),
+            tracker: TokenSpanTracker::new(),
         }
     }
 
     pub fn next(&mut self) -> Token {
         if let Some(_) = self.chars.peek() {
             for quantifier in &self.quantifiers {
-                if let Some(token) = quantifier.process(&mut self.chars, &mut self.span) {
+                if let Some(token) = quantifier.process(&mut self.chars, &mut self.tracker) {
                     return token;
                 }
             }
 
-            return Token::ILLEGAL {
-                span: self.span.capture(),
+            return Token {
+                span: self.tracker.capture(),
+                kind: TokenKind::ILLEGAL,
                 literal: match self.chars.next() {
                     Some(c) => c.to_string().into_boxed_str(),
                     None => "\0".into(),
@@ -49,7 +106,11 @@ impl Lexer<'_> {
             };
         }
 
-        Token::EOF
+        Token {
+            span: self.tracker.capture(),
+            kind: TokenKind::EOF,
+            literal: "\0".into(),
+        }
     }
 }
 
@@ -58,7 +119,10 @@ impl Iterator for Lexer<'_> {
 
     fn next(&mut self) -> Option<Self::Item> {
         match self.next() {
-            Token::EOF => None,
+            Token {
+                kind: TokenKind::EOF,
+                ..
+            } => None,
             token => Some(token),
         }
     }
@@ -73,61 +137,168 @@ mod tests {
         let input = "= + ( ) { } , ; ! - / * < > == != <= >=";
 
         let tokens = vec![
-            Token::ASSIGN {
-                span: Span::new(1, 1, 1),
+            Token {
+                span: TokenSpan {
+                    line: 1,
+                    column: 1,
+                    length: 1,
+                },
+                kind: TokenKind::ASSIGN,
+                literal: "=".into(),
             },
-            Token::PLUS {
-                span: Span::new(1, 3, 1),
+            Token {
+                span: TokenSpan {
+                    line: 1,
+                    column: 3,
+                    length: 1,
+                },
+                kind: TokenKind::PLUS,
+                literal: "+".into(),
             },
-            Token::LPAREN {
-                span: Span::new(1, 5, 1),
+            Token {
+                span: TokenSpan {
+                    line: 1,
+                    column: 5,
+                    length: 1,
+                },
+                kind: TokenKind::LPAREN,
+                literal: "(".into(),
             },
-            Token::RPAREN {
-                span: Span::new(1, 7, 1),
+            Token {
+                span: TokenSpan {
+                    line: 1,
+                    column: 7,
+                    length: 1,
+                },
+                kind: TokenKind::RPAREN,
+                literal: ")".into(),
             },
-            Token::LBRACE {
-                span: Span::new(1, 9, 1),
+            Token {
+                span: TokenSpan {
+                    line: 1,
+                    column: 9,
+                    length: 1,
+                },
+                kind: TokenKind::LBRACE,
+                literal: "{".into(),
             },
-            Token::RBRACE {
-                span: Span::new(1, 11, 1),
+            Token {
+                span: TokenSpan {
+                    line: 1,
+                    column: 11,
+                    length: 1,
+                },
+                kind: TokenKind::RBRACE,
+                literal: "}".into(),
             },
-            Token::COMMA {
-                span: Span::new(1, 13, 1),
+            Token {
+                span: TokenSpan {
+                    line: 1,
+                    column: 13,
+                    length: 1,
+                },
+                kind: TokenKind::COMMA,
+                literal: ",".into(),
             },
-            Token::SEMICOLON {
-                span: Span::new(1, 15, 1),
+            Token {
+                span: TokenSpan {
+                    line: 1,
+                    column: 15,
+                    length: 1,
+                },
+                kind: TokenKind::SEMICOLON,
+                literal: ";".into(),
             },
-            Token::BANG {
-                span: Span::new(1, 17, 1),
+            Token {
+                span: TokenSpan {
+                    line: 1,
+                    column: 17,
+                    length: 1,
+                },
+                kind: TokenKind::BANG,
+                literal: "!".into(),
             },
-            Token::MINUS {
-                span: Span::new(1, 19, 1),
+            Token {
+                span: TokenSpan {
+                    line: 1,
+                    column: 19,
+                    length: 1,
+                },
+                kind: TokenKind::MINUS,
+                literal: "-".into(),
             },
-            Token::SLASH {
-                span: Span::new(1, 21, 1),
+            Token {
+                span: TokenSpan {
+                    line: 1,
+                    column: 21,
+                    length: 1,
+                },
+                kind: TokenKind::SLASH,
+                literal: "/".into(),
             },
-            Token::ASTERISK {
-                span: Span::new(1, 23, 1),
+            Token {
+                span: TokenSpan {
+                    line: 1,
+                    column: 23,
+                    length: 1,
+                },
+                kind: TokenKind::ASTERISK,
+                literal: "*".into(),
             },
-            Token::LT {
-                span: Span::new(1, 25, 1),
+            Token {
+                span: TokenSpan {
+                    line: 1,
+                    column: 25,
+                    length: 1,
+                },
+                kind: TokenKind::LT,
+                literal: "<".into(),
             },
-            Token::GT {
-                span: Span::new(1, 27, 1),
+            Token {
+                span: TokenSpan {
+                    line: 1,
+                    column: 27,
+                    length: 1,
+                },
+                kind: TokenKind::GT,
+                literal: ">".into(),
             },
-            Token::EQ {
-                span: Span::new(1, 29, 2),
+            Token {
+                span: TokenSpan {
+                    line: 1,
+                    column: 29,
+                    length: 2,
+                },
+                kind: TokenKind::EQ,
+                literal: "==".into(),
             },
-            Token::NEQ {
-                span: Span::new(1, 32, 2),
+            Token {
+                span: TokenSpan {
+                    line: 1,
+                    column: 32,
+                    length: 2,
+                },
+                kind: TokenKind::NEQ,
+                literal: "!=".into(),
             },
-            Token::LTE {
-                span: Span::new(1, 35, 2),
+            Token {
+                span: TokenSpan {
+                    line: 1,
+                    column: 35,
+                    length: 2,
+                },
+                kind: TokenKind::LTE,
+                literal: "<=".into(),
             },
-            Token::GTE {
-                span: Span::new(1, 38, 2),
+            Token {
+                span: TokenSpan {
+                    line: 1,
+                    column: 38,
+                    length: 2,
+                },
+                kind: TokenKind::GTE,
+                literal: ">=".into(),
             },
-            Token::EOF,
         ];
 
         let mut lexer = Lexer::new(input);
@@ -143,24 +314,51 @@ mod tests {
         let input = "let five = 5;";
 
         let tokens = vec![
-            Token::LET {
-                span: Span::new(1, 1, 3),
+            Token {
+                span: TokenSpan {
+                    line: 1,
+                    column: 1,
+                    length: 3,
+                },
+                kind: TokenKind::LET,
+                literal: "let".into(),
             },
-            Token::IDENT {
-                span: Span::new(1, 5, 4),
-                value: "five".into(),
+            Token {
+                span: TokenSpan {
+                    line: 1,
+                    column: 5,
+                    length: 4,
+                },
+                kind: TokenKind::IDENT,
+                literal: "five".into(),
             },
-            Token::ASSIGN {
-                span: Span::new(1, 10, 1),
+            Token {
+                span: TokenSpan {
+                    line: 1,
+                    column: 10,
+                    length: 1,
+                },
+                kind: TokenKind::ASSIGN,
+                literal: "=".into(),
             },
-            Token::INT {
-                span: Span::new(1, 12, 1),
-                value: "5".into(),
+            Token {
+                span: TokenSpan {
+                    line: 1,
+                    column: 12,
+                    length: 1,
+                },
+                kind: TokenKind::INT,
+                literal: "5".into(),
             },
-            Token::SEMICOLON {
-                span: Span::new(1, 13, 1),
+            Token {
+                span: TokenSpan {
+                    line: 1,
+                    column: 13,
+                    length: 1,
+                },
+                kind: TokenKind::SEMICOLON,
+                literal: ";".into(),
             },
-            Token::EOF,
         ];
 
         let mut lexer = Lexer::new(input);
@@ -176,84 +374,213 @@ mod tests {
         let input = "let add = fn(x, y) { x + y; };\nadd(5, 10);";
 
         let tokens = vec![
-            Token::LET {
-                span: Span::new(1, 1, 3),
+            Token {
+                span: TokenSpan {
+                    line: 1,
+                    column: 1,
+                    length: 3,
+                },
+                kind: TokenKind::LET,
+                literal: "let".into(),
             },
-            Token::IDENT {
-                span: Span::new(1, 5, 3),
-                value: "add".into(),
+            Token {
+                span: TokenSpan {
+                    line: 1,
+                    column: 5,
+                    length: 3,
+                },
+                kind: TokenKind::IDENT,
+                literal: "add".into(),
             },
-            Token::ASSIGN {
-                span: Span::new(1, 9, 1),
+            Token {
+                span: TokenSpan {
+                    line: 1,
+                    column: 9,
+                    length: 1,
+                },
+                kind: TokenKind::ASSIGN,
+                literal: "=".into(),
             },
-            Token::FUNCTION {
-                span: Span::new(1, 11, 2),
+            Token {
+                span: TokenSpan {
+                    line: 1,
+                    column: 11,
+                    length: 2,
+                },
+                kind: TokenKind::FUNCTION,
+                literal: "fn".into(),
             },
-            Token::LPAREN {
-                span: Span::new(1, 13, 1),
+            Token {
+                span: TokenSpan {
+                    line: 1,
+                    column: 13,
+                    length: 1,
+                },
+                kind: TokenKind::LPAREN,
+                literal: "(".into(),
             },
-            Token::IDENT {
-                span: Span::new(1, 14, 1),
-                value: "x".into(),
+            Token {
+                span: TokenSpan {
+                    line: 1,
+                    column: 14,
+                    length: 1,
+                },
+                kind: TokenKind::IDENT,
+                literal: "x".into(),
             },
-            Token::COMMA {
-                span: Span::new(1, 15, 1),
+            Token {
+                span: TokenSpan {
+                    line: 1,
+                    column: 15,
+                    length: 1,
+                },
+                kind: TokenKind::COMMA,
+                literal: ",".into(),
             },
-            Token::IDENT {
-                span: Span::new(1, 17, 1),
-                value: "y".into(),
+            Token {
+                span: TokenSpan {
+                    line: 1,
+                    column: 17,
+                    length: 1,
+                },
+                kind: TokenKind::IDENT,
+                literal: "y".into(),
             },
-            Token::RPAREN {
-                span: Span::new(1, 18, 1),
+            Token {
+                span: TokenSpan {
+                    line: 1,
+                    column: 18,
+                    length: 1,
+                },
+                kind: TokenKind::RPAREN,
+                literal: ")".into(),
             },
-            Token::LBRACE {
-                span: Span::new(1, 20, 1),
+            Token {
+                span: TokenSpan {
+                    line: 1,
+                    column: 20,
+                    length: 1,
+                },
+                kind: TokenKind::LBRACE,
+                literal: "{".into(),
             },
-            Token::IDENT {
-                span: Span::new(1, 22, 1),
-                value: "x".into(),
+            Token {
+                span: TokenSpan {
+                    line: 1,
+                    column: 22,
+                    length: 1,
+                },
+                kind: TokenKind::IDENT,
+                literal: "x".into(),
             },
-            Token::PLUS {
-                span: Span::new(1, 24, 1),
+            Token {
+                span: TokenSpan {
+                    line: 1,
+                    column: 24,
+                    length: 1,
+                },
+                kind: TokenKind::PLUS,
+                literal: "+".into(),
             },
-            Token::IDENT {
-                span: Span::new(1, 26, 1),
-                value: "y".into(),
+            Token {
+                span: TokenSpan {
+                    line: 1,
+                    column: 26,
+                    length: 1,
+                },
+                kind: TokenKind::IDENT,
+                literal: "y".into(),
             },
-            Token::SEMICOLON {
-                span: Span::new(1, 27, 1),
+            Token {
+                span: TokenSpan {
+                    line: 1,
+                    column: 27,
+                    length: 1,
+                },
+                kind: TokenKind::SEMICOLON,
+                literal: ";".into(),
             },
-            Token::RBRACE {
-                span: Span::new(1, 29, 1),
+            Token {
+                span: TokenSpan {
+                    line: 1,
+                    column: 29,
+                    length: 1,
+                },
+                kind: TokenKind::RBRACE,
+                literal: "}".into(),
             },
-            Token::SEMICOLON {
-                span: Span::new(1, 30, 1),
+            Token {
+                span: TokenSpan {
+                    line: 1,
+                    column: 30,
+                    length: 1,
+                },
+                kind: TokenKind::SEMICOLON,
+                literal: ";".into(),
             },
-            Token::IDENT {
-                span: Span::new(2, 1, 3),
-                value: "add".into(),
+            Token {
+                span: TokenSpan {
+                    line: 2,
+                    column: 1,
+                    length: 3,
+                },
+                kind: TokenKind::IDENT,
+                literal: "add".into(),
             },
-            Token::LPAREN {
-                span: Span::new(2, 4, 1),
+            Token {
+                span: TokenSpan {
+                    line: 2,
+                    column: 4,
+                    length: 1,
+                },
+                kind: TokenKind::LPAREN,
+                literal: "(".into(),
             },
-            Token::INT {
-                span: Span::new(2, 5, 1),
-                value: "5".into(),
+            Token {
+                span: TokenSpan {
+                    line: 2,
+                    column: 5,
+                    length: 1,
+                },
+                kind: TokenKind::INT,
+                literal: "5".into(),
             },
-            Token::COMMA {
-                span: Span::new(2, 6, 1),
+            Token {
+                span: TokenSpan {
+                    line: 2,
+                    column: 6,
+                    length: 1,
+                },
+                kind: TokenKind::COMMA,
+                literal: ",".into(),
             },
-            Token::INT {
-                span: Span::new(2, 8, 2),
-                value: "10".into(),
+            Token {
+                span: TokenSpan {
+                    line: 2,
+                    column: 8,
+                    length: 2,
+                },
+                kind: TokenKind::INT,
+                literal: "10".into(),
             },
-            Token::RPAREN {
-                span: Span::new(2, 10, 1),
+            Token {
+                span: TokenSpan {
+                    line: 2,
+                    column: 10,
+                    length: 1,
+                },
+                kind: TokenKind::RPAREN,
+                literal: ")".into(),
             },
-            Token::SEMICOLON {
-                span: Span::new(2, 11, 1),
+            Token {
+                span: TokenSpan {
+                    line: 2,
+                    column: 11,
+                    length: 1,
+                },
+                kind: TokenKind::SEMICOLON,
+                literal: ";".into(),
             },
-            Token::EOF,
         ];
 
         let mut lexer = Lexer::new(input);
@@ -269,58 +596,158 @@ mod tests {
         let input = "if (5 < 10) { return true; } else { return false; }";
 
         let tokens = vec![
-            Token::IF {
-                span: Span::new(1, 1, 2),
+            Token {
+                span: TokenSpan {
+                    line: 1,
+                    column: 1,
+                    length: 2,
+                },
+                kind: TokenKind::IF,
+                literal: "if".into(),
             },
-            Token::LPAREN {
-                span: Span::new(1, 4, 1),
+            Token {
+                span: TokenSpan {
+                    line: 1,
+                    column: 4,
+                    length: 1,
+                },
+                kind: TokenKind::LPAREN,
+                literal: "(".into(),
             },
-            Token::INT {
-                span: Span::new(1, 5, 1),
-                value: "5".into(),
+            Token {
+                span: TokenSpan {
+                    line: 1,
+                    column: 5,
+                    length: 1,
+                },
+                kind: TokenKind::INT,
+                literal: "5".into(),
             },
-            Token::LT {
-                span: Span::new(1, 7, 1),
+            Token {
+                span: TokenSpan {
+                    line: 1,
+                    column: 7,
+                    length: 1,
+                },
+                kind: TokenKind::LT,
+                literal: "<".into(),
             },
-            Token::INT {
-                span: Span::new(1, 9, 2),
-                value: "10".into(),
+            Token {
+                span: TokenSpan {
+                    line: 1,
+                    column: 9,
+                    length: 2,
+                },
+                kind: TokenKind::INT,
+                literal: "10".into(),
             },
-            Token::RPAREN {
-                span: Span::new(1, 11, 1),
+            Token {
+                span: TokenSpan {
+                    line: 1,
+                    column: 11,
+                    length: 1,
+                },
+                kind: TokenKind::RPAREN,
+                literal: ")".into(),
             },
-            Token::LBRACE {
-                span: Span::new(1, 13, 1),
+            Token {
+                span: TokenSpan {
+                    line: 1,
+                    column: 13,
+                    length: 1,
+                },
+                kind: TokenKind::LBRACE,
+                literal: "{".into(),
             },
-            Token::RETURN {
-                span: Span::new(1, 15, 6),
+            Token {
+                span: TokenSpan {
+                    line: 1,
+                    column: 15,
+                    length: 6,
+                },
+                kind: TokenKind::RETURN,
+                literal: "return".into(),
             },
-            Token::TRUE {
-                span: Span::new(1, 22, 4),
+            Token {
+                span: TokenSpan {
+                    line: 1,
+                    column: 22,
+                    length: 4,
+                },
+                kind: TokenKind::TRUE,
+                literal: "true".into(),
             },
-            Token::SEMICOLON {
-                span: Span::new(1, 26, 1),
+            Token {
+                span: TokenSpan {
+                    line: 1,
+                    column: 26,
+                    length: 1,
+                },
+                kind: TokenKind::SEMICOLON,
+                literal: ";".into(),
             },
-            Token::RBRACE {
-                span: Span::new(1, 28, 1),
+            Token {
+                span: TokenSpan {
+                    line: 1,
+                    column: 28,
+                    length: 1,
+                },
+                kind: TokenKind::RBRACE,
+                literal: "}".into(),
             },
-            Token::ELSE {
-                span: Span::new(1, 30, 4),
+            Token {
+                span: TokenSpan {
+                    line: 1,
+                    column: 30,
+                    length: 4,
+                },
+                kind: TokenKind::ELSE,
+                literal: "else".into(),
             },
-            Token::LBRACE {
-                span: Span::new(1, 35, 1),
+            Token {
+                span: TokenSpan {
+                    line: 1,
+                    column: 35,
+                    length: 1,
+                },
+                kind: TokenKind::LBRACE,
+                literal: "{".into(),
             },
-            Token::RETURN {
-                span: Span::new(1, 37, 6),
+            Token {
+                span: TokenSpan {
+                    line: 1,
+                    column: 37,
+                    length: 6,
+                },
+                kind: TokenKind::RETURN,
+                literal: "return".into(),
             },
-            Token::FALSE {
-                span: Span::new(1, 44, 5),
+            Token {
+                span: TokenSpan {
+                    line: 1,
+                    column: 44,
+                    length: 5,
+                },
+                kind: TokenKind::FALSE,
+                literal: "false".into(),
             },
-            Token::SEMICOLON {
-                span: Span::new(1, 49, 1),
+            Token {
+                span: TokenSpan {
+                    line: 1,
+                    column: 49,
+                    length: 1,
+                },
+                kind: TokenKind::SEMICOLON,
+                literal: ";".into(),
             },
-            Token::RBRACE {
-                span: Span::new(1, 51, 1),
+            Token {
+                span: TokenSpan {
+                    line: 1,
+                    column: 51,
+                    length: 1,
+                },
+                kind: TokenKind::RBRACE,
+                literal: "}".into(),
             },
         ];
 
