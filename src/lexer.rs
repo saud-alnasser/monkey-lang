@@ -70,7 +70,7 @@ pub struct Lexer<'a> {
 impl Lexer<'_> {
     pub fn new<'a>(input: &'a str) -> Lexer<'a> {
         Lexer {
-            chars: input.trim().chars().peekable(),
+            chars: input.trim_start().chars().peekable(),
             span: SpanTracker::new(),
             peeked: None,
             exhausted: false,
