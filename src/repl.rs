@@ -1,6 +1,6 @@
 use std::io::{self, Write};
 
-use crate::{Lexer, Token, TokenKind};
+use crate::{Lexer, Parser};
 
 pub struct REPL;
 
@@ -13,35 +13,17 @@ impl REPL {
             io::stdout().flush().unwrap();
             io::stdin().read_line(&mut input).unwrap();
 
-            let tokens: Vec<Token> = Lexer::new(input.trim()).collect();
+            let lexer = Lexer::new(input.as_str());
+            let mut parser = Parser::new(lexer);
 
-            let illegal: Option<&Token> = tokens.iter().find(|token| {
-                matches!(
-                    token,
-                    Token {
-                        kind: TokenKind::ILLEGAL,
-                        ..
-                    }
-                )
-            });
+            match parser.parse() {
+                Ok(program) => {
+                    println!("{:#?}", program);
+                }
+                Err(e) => {
+                    println!("{}", e);
 
-            match illegal {
-                Some(token) => match token {
-                    Token {
-                        span,
-                        kind: TokenKind::ILLEGAL,
-                        literal,
-                    } => {
-                        println!("illegal {:?} at {}:{}", literal, span.line, span.column);
-
-                        input.clear();
-                    }
-                    _ => unreachable!("unreachable state"),
-                },
-                None => {
-                    for token in tokens {
-                        println!("{:?}", token);
-                    }
+                    input.clear();
                 }
             }
         }

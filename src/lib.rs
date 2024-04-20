@@ -6,4 +6,5 @@ mod utils;
 
 pub use ast::*;
 pub use lexer::Lexer;
+pub use parser::Parser;
 pub use repl::REPL;
