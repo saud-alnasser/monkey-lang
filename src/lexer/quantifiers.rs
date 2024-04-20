@@ -2,13 +2,13 @@ use super::{utils, FramedSpan, Token};
 use std::{iter::Peekable, str::Chars};
 
 pub trait Quantifier {
-    fn process(chars: &mut Peekable<Chars>, span: &mut FramedSpan) -> Option<Token>;
+    fn process(&self, chars: &mut Peekable<Chars>, span: &mut FramedSpan) -> Option<Token>;
 }
 
 pub struct WhitespaceQuantifier;
 
 impl Quantifier for WhitespaceQuantifier {
-    fn process(chars: &mut Peekable<Chars>, span: &mut FramedSpan) -> Option<Token> {
+    fn process(&self, chars: &mut Peekable<Chars>, span: &mut FramedSpan) -> Option<Token> {
         if let Some(whitespace) = utils::take_series_where(chars, |c| c.is_whitespace()) {
             span.advance(&whitespace);
         }
@@ -20,7 +20,7 @@ impl Quantifier for WhitespaceQuantifier {
 pub struct OperatorsQuantifier;
 
 impl Quantifier for OperatorsQuantifier {
-    fn process(chars: &mut Peekable<Chars>, span: &mut FramedSpan) -> Option<Token> {
+    fn process(&self, chars: &mut Peekable<Chars>, span: &mut FramedSpan) -> Option<Token> {
         match chars.peek()? {
             '=' => {
                 chars.next();
@@ -130,7 +130,7 @@ impl Quantifier for OperatorsQuantifier {
 pub struct DelimitersQuantifier;
 
 impl Quantifier for DelimitersQuantifier {
-    fn process(chars: &mut Peekable<Chars>, span: &mut FramedSpan) -> Option<Token> {
+    fn process(&self, chars: &mut Peekable<Chars>, span: &mut FramedSpan) -> Option<Token> {
         match chars.peek()? {
             ',' => {
                 chars.next();
@@ -154,7 +154,7 @@ impl Quantifier for DelimitersQuantifier {
 pub struct BracketsQuantifier;
 
 impl Quantifier for BracketsQuantifier {
-    fn process(chars: &mut Peekable<Chars>, span: &mut FramedSpan) -> Option<Token> {
+    fn process(&self, chars: &mut Peekable<Chars>, span: &mut FramedSpan) -> Option<Token> {
         match chars.peek()? {
             '(' => {
                 chars.next();
@@ -192,7 +192,7 @@ impl Quantifier for BracketsQuantifier {
 pub struct LiteralsQuantifier;
 
 impl Quantifier for LiteralsQuantifier {
-    fn process(chars: &mut Peekable<Chars>, span: &mut FramedSpan) -> Option<Token> {
+    fn process(&self, chars: &mut Peekable<Chars>, span: &mut FramedSpan) -> Option<Token> {
         match utils::take_series_where(chars, |c| c.is_ascii_digit()) {
             Some(literal) => {
                 span.advance(&literal);
@@ -210,7 +210,7 @@ impl Quantifier for LiteralsQuantifier {
 pub struct KeywordAndIdentifiersQuantifier;
 
 impl Quantifier for KeywordAndIdentifiersQuantifier {
-    fn process(chars: &mut Peekable<Chars>, span: &mut FramedSpan) -> Option<Token> {
+    fn process(&self, chars: &mut Peekable<Chars>, span: &mut FramedSpan) -> Option<Token> {
         match utils::take_series_where(chars, |c| c.is_ascii_alphanumeric() || *c == '_') {
             Some(keyword) => {
                 span.advance(&keyword);

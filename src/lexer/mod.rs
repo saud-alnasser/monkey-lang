@@ -10,6 +10,7 @@ pub use tokens::*;
 use std::{iter::Peekable, str::Chars};
 
 pub struct Lexer<'a> {
+    quantifiers: Vec<Box<dyn Quantifier>>,
     chars: Peekable<Chars<'a>>,
     span: FramedSpan,
 }
@@ -17,38 +18,26 @@ pub struct Lexer<'a> {
 impl Lexer<'_> {
     pub fn new<'a>(input: &'a str) -> Lexer<'a> {
         Lexer {
+            // NOTE: order of quantifiers is important
+            quantifiers: vec![
+                Box::new(WhitespaceQuantifier),
+                Box::new(OperatorsQuantifier),
+                Box::new(DelimitersQuantifier),
+                Box::new(BracketsQuantifier),
+                Box::new(LiteralsQuantifier),
+                Box::new(KeywordAndIdentifiersQuantifier),
+            ],
             chars: input.trim().chars().peekable(),
             span: FramedSpan::new(),
         }
     }
 
     pub fn next(&mut self) -> Token {
-        // NOTE: order of quantifiers is important, also usage of quantifiers directly is for performance.
         if let Some(_) = self.chars.peek() {
-            if let Some(token) = WhitespaceQuantifier::process(&mut self.chars, &mut self.span) {
-                return token;
-            }
-
-            if let Some(token) = OperatorsQuantifier::process(&mut self.chars, &mut self.span) {
-                return token;
-            }
-
-            if let Some(token) = DelimitersQuantifier::process(&mut self.chars, &mut self.span) {
-                return token;
-            }
-
-            if let Some(token) = BracketsQuantifier::process(&mut self.chars, &mut self.span) {
-                return token;
-            }
-
-            if let Some(token) = LiteralsQuantifier::process(&mut self.chars, &mut self.span) {
-                return token;
-            }
-
-            if let Some(token) =
-                KeywordAndIdentifiersQuantifier::process(&mut self.chars, &mut self.span)
-            {
-                return token;
+            for quantifier in &self.quantifiers {
+                if let Some(token) = quantifier.process(&mut self.chars, &mut self.span) {
+                    return token;
+                }
             }
 
             return Token::ILLEGAL {
