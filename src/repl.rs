@@ -1,5 +1,6 @@
-use crate::{lexer::TokenKind, Lexer, Token};
 use std::io::{self, Write};
+
+use crate::{Lexer, Token, TokenKind};
 
 pub struct REPL;
 
@@ -31,7 +32,7 @@ impl REPL {
                         kind: TokenKind::ILLEGAL,
                         literal,
                     } => {
-                        println!("illegal {:?} at {}:{}", literal, span.line(), span.column());
+                        println!("illegal {:?} at {}:{}", literal, span.line, span.column);
 
                         input.clear();
                     }
