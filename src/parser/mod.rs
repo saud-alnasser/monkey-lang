@@ -14,7 +14,10 @@ pub struct Parser<'a> {
 impl<'a> Parser<'a> {
     pub fn new(lexer: Lexer<'a>) -> Self {
         Parser {
-            quantifiers: vec![Box::new(quantifiers::LetStatementQuantifier)],
+            quantifiers: vec![
+                Box::new(quantifiers::LetStatementQuantifier),
+                Box::new(quantifiers::ReturnStatementQuantifier),
+            ],
             lexer: lexer.peekable(),
         }
     }
@@ -68,6 +71,34 @@ mod tests {
                 Statement::Let { identifier, .. } => {
                     assert_eq!(**identifier, **expected);
                 }
+                _ => unreachable!(),
+            }
+        }
+    }
+
+    #[test]
+    fn test_return_statements() {
+        let input = "return 5; return 10;";
+
+        let lexer = Lexer::new(input);
+        let mut parser = Parser::new(lexer);
+
+        let program = parser.parse().unwrap();
+
+        assert_eq!(program.statements.len(), 2);
+
+        let expected = ["5", "10"];
+
+        for (i, expected) in expected.iter().enumerate() {
+            let statement = &program.statements[i];
+
+            match statement {
+                Statement::Return { expression, .. } => match expression {
+                    Expression::INT { value } => {
+                        assert_eq!(**value, **expected);
+                    }
+                },
+                _ => unreachable!(),
             }
         }
     }

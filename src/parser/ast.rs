@@ -1,4 +1,6 @@
-use crate::Token;
+use std::iter::Peekable;
+
+use crate::{Lexer, Token, TokenKind};
 
 pub enum Statement {
     Let {
@@ -6,10 +8,18 @@ pub enum Statement {
         identifier: Box<str>,
         expression: Expression,
     },
+    Return {
+        token: Token,
+        expression: Expression,
+    },
 }
 
 pub enum Expression {
     INT { value: Box<str> },
+}
+
+impl Expression {
+    pub fn process(lexer: &mut Peekable<Lexer>) {}
 }
 
 pub struct Program {
