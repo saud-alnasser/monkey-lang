@@ -1,3 +1,25 @@
+## 0.0.4 (2024-04-20)
+
+### Features
+
+#### create basic let statements parser (#23)
+
+#### create basic return statements parser (#25)
+
+#### create basic expression statments parser (#26)
+
+#### handle basic prefix expressions (#28)
+
+#### prepare for handling infix operators (#29)
+
+#### handle infix expressions (#31)
+
+#### use the parser in the repl (#32)
+
+#### created a parser that can parse let, return and expression statments.
+
+#### implemented prefix and infix pratt parsing for integers and identfiers for now.
+
 ## 0.0.3 (2024-02-27)
 
 ### Features
