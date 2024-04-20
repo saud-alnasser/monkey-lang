@@ -15,53 +15,31 @@ pub struct LetStatementQuantifier;
 impl Quantifier for LetStatementQuantifier {
     fn is_applicable(&self, lexer: &mut Peekable<Lexer>) -> bool {
         match lexer.peek() {
-            Some(Token {
-                kind: TokenKind::LET,
-                ..
-            }) => true,
+            Some(token) if token.kind == TokenKind::LET => true,
             _ => false,
         }
     }
 
     fn process(&self, lexer: &mut Peekable<Lexer>) -> Result<Statement, Box<dyn Error>> {
         let token = match lexer.next() {
-            Some(token) => token,
-            None => return Err("Expected keyword let".into()),
+            Some(token) if token.kind == TokenKind::LET => token,
+            _ => return Err("Expected keyword let".into()),
         };
 
         let identifier = match lexer.next() {
-            Some(Token {
-                kind: TokenKind::IDENT,
-                literal,
-                ..
-            }) => literal,
+            Some(token) if token.kind == TokenKind::IDENT => token.literal,
             _ => return Err("Expected identifier".into()),
         };
 
         match lexer.next() {
-            Some(Token {
-                kind: TokenKind::ASSIGN,
-                ..
-            }) => (),
+            Some(token) if token.kind == TokenKind::ASSIGN => (),
             _ => return Err("Expected assignment operator".into()),
         }
 
-        // TODO: manage all kinds of expressions
-
-        let expression = match lexer.next() {
-            Some(Token {
-                kind: TokenKind::INT,
-                literal,
-                ..
-            }) => Expression::INT { value: literal },
-            _ => return Err("Expected expression".into()),
-        };
+        let expression = Expression::parse(lexer)?;
 
         match lexer.next() {
-            Some(Token {
-                kind: TokenKind::SEMICOLON,
-                ..
-            }) => (),
+            Some(token) if token.kind == TokenKind::SEMICOLON => (),
             _ => return Err("Expected semicolon".into()),
         }
 
@@ -78,39 +56,51 @@ pub struct ReturnStatementQuantifier;
 impl Quantifier for ReturnStatementQuantifier {
     fn is_applicable(&self, lexer: &mut Peekable<Lexer>) -> bool {
         match lexer.peek() {
-            Some(Token {
-                kind: TokenKind::RETURN,
-                ..
-            }) => true,
+            Some(token) if token.kind == TokenKind::RETURN => true,
             _ => false,
         }
     }
 
     fn process(&self, lexer: &mut Peekable<Lexer>) -> Result<Statement, Box<dyn Error>> {
         let token = match lexer.next() {
-            Some(token) => token,
-            None => return Err("Expected keyword return".into()),
+            Some(token) if token.kind == TokenKind::RETURN => token,
+            _ => return Err("Expected keyword return".into()),
         };
 
-        // TODO: manage all kinds of expressions
-
-        let expression = match lexer.next() {
-            Some(Token {
-                kind: TokenKind::INT,
-                literal,
-                ..
-            }) => Expression::INT { value: literal },
-            _ => return Err("Expected expression".into()),
-        };
+        let expression = Expression::parse(lexer)?;
 
         match lexer.next() {
-            Some(Token {
-                kind: TokenKind::SEMICOLON,
-                ..
-            }) => (),
+            Some(token) if token.kind == TokenKind::SEMICOLON => (),
             _ => return Err("Expected semicolon".into()),
         }
 
         Ok(Statement::Return { token, expression })
+    }
+}
+
+pub struct ExpressionStatementQuantifier;
+
+impl Quantifier for ExpressionStatementQuantifier {
+    fn is_applicable(&self, lexer: &mut Peekable<Lexer>) -> bool {
+        match lexer.peek() {
+            Some(token) if token.kind == TokenKind::LET || token.kind == TokenKind::RETURN => false,
+            _ => true,
+        }
+    }
+
+    fn process(&self, lexer: &mut Peekable<Lexer>) -> Result<Statement, Box<dyn Error>> {
+        let token = match lexer.next() {
+            Some(token) if token.kind != TokenKind::LET && token.kind != TokenKind::RETURN => token,
+            _ => return Err("Expected a token".into()),
+        };
+
+        let expression = Expression::parse(lexer)?;
+
+        match lexer.next() {
+            Some(token) if token.kind == TokenKind::SEMICOLON => (),
+            _ => return Err("Expected semicolon".into()),
+        }
+
+        Ok(Statement::Expression { token, expression })
     }
 }
