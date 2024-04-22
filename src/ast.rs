@@ -1,3 +1,5 @@
+use std::fmt::Display;
+
 #[derive(Debug, PartialEq, Clone)]
 pub struct TokenSpan {
     pub line: usize,
@@ -63,8 +65,8 @@ pub enum Precedence {
     COMPARISON = 3,  // comparison: > or <
     SUM = 4,         // sum: + or -
     PRODUCT = 5,     // product: * or /
-    PREFIX = 6,      // prefix: -X or !X
-    CALL = 7,        // call: func(X)
+    PREFIX = 6,      // prefix: -x or !x
+    CALL = 7,        // call: func(x)
 }
 
 impl From<&TokenKind> for Precedence {
@@ -89,6 +91,10 @@ pub enum Expression {
         token: Token,
         value: i64,
     },
+    BOOLEAN {
+        token: Token,
+        value: bool,
+    },
     PREFIX {
         operator: Token,
         right: Box<Expression>,
@@ -98,6 +104,22 @@ pub enum Expression {
         left: Box<Expression>,
         right: Box<Expression>,
     },
+}
+
+impl Display for Expression {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Expression::IDENT { value, .. } => write!(f, "{}", value),
+            Expression::INT { value, .. } => write!(f, "{}", value),
+            Expression::BOOLEAN { value, .. } => write!(f, "{}", value),
+            Expression::PREFIX { operator, right } => write!(f, "({}{})", operator.literal, right),
+            Expression::INFIX {
+                left,
+                operator,
+                right,
+            } => write!(f, "({} {} {})", left, operator.literal, right),
+        }
+    }
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -117,9 +139,35 @@ pub enum Statement {
     },
 }
 
+impl Display for Statement {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Statement::Let {
+                identifier,
+                expression,
+                ..
+            } => write!(f, "let {} = {};", identifier, expression),
+            Statement::Return { expression, .. } => write!(f, "return {};", expression),
+            Statement::Expression { expression, .. } => write!(f, "{};", expression),
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct Program {
     pub statements: Vec<Statement>,
+}
+
+impl Display for Program {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut output = String::new();
+
+        for statement in &self.statements {
+            output.push_str(&format!("{}", statement));
+        }
+
+        write!(f, "{}", output)
+    }
 }
 
 impl Program {
