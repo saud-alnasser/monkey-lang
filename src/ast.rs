@@ -82,64 +82,111 @@ impl From<&TokenKind> for Precedence {
 }
 
 #[derive(Debug, PartialEq, Clone)]
+pub struct IdentExpression {
+    pub token: Token,
+    pub value: Box<str>,
+}
+
+impl Display for IdentExpression {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.value)
+    }
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub struct IntExpression {
+    pub token: Token,
+    pub value: i64,
+}
+
+impl Display for IntExpression {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.value)
+    }
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub struct BooleanExpression {
+    pub token: Token,
+    pub value: bool,
+}
+
+impl Display for BooleanExpression {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.value)
+    }
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub struct IfExpression {
+    pub token: Token,
+    pub condition: Box<Expression>,
+    pub consequence: BlockStatement,
+    pub alternative: Option<BlockStatement>,
+}
+
+impl Display for IfExpression {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut output = String::new();
+
+        output.push_str(&format!("if {} {}", self.condition, self.consequence));
+
+        if let Some(alternative) = &self.alternative {
+            output.push_str(&format!(" else {}", alternative));
+        }
+
+        write!(f, "{}", output)
+    }
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub struct PrefixExpression {
+    pub operator: Token,
+    pub right: Box<Expression>,
+}
+
+impl Display for PrefixExpression {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "({}{})", self.operator.literal, self.right)
+    }
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub struct InfixExpression {
+    pub operator: Token,
+    pub left: Box<Expression>,
+    pub right: Box<Expression>,
+}
+
+impl Display for InfixExpression {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "({} {} {})",
+            self.left, self.operator.literal, self.right
+        )
+    }
+}
+
+#[derive(Debug, PartialEq, Clone)]
 pub enum Expression {
-    IDENT {
-        token: Token,
-        value: Box<str>,
-    },
-    INT {
-        token: Token,
-        value: i64,
-    },
-    BOOLEAN {
-        token: Token,
-        value: bool,
-    },
-    IF {
-        token: Token,
-        condition: Box<Expression>,
-        consequence: BlockStatement,
-        alternative: Option<BlockStatement>,
-    },
-    PREFIX {
-        operator: Token,
-        right: Box<Expression>,
-    },
-    INFIX {
-        operator: Token,
-        left: Box<Expression>,
-        right: Box<Expression>,
-    },
+    IDENT(IdentExpression),
+    INT(IntExpression),
+    BOOLEAN(BooleanExpression),
+    IF(IfExpression),
+    PREFIX(PrefixExpression),
+    INFIX(InfixExpression),
 }
 
 impl Display for Expression {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Expression::IDENT { value, .. } => write!(f, "{}", value),
-            Expression::INT { value, .. } => write!(f, "{}", value),
-            Expression::BOOLEAN { value, .. } => write!(f, "{}", value),
-            Expression::IF {
-                condition,
-                consequence,
-                alternative,
-                ..
-            } => {
-                let mut output = String::new();
-
-                output.push_str(&format!("if {} {}", condition, consequence));
-
-                if let Some(alternative) = alternative {
-                    output.push_str(&format!(" else {}", alternative));
-                }
-
-                write!(f, "{}", output)
-            }
-            Expression::PREFIX { operator, right } => write!(f, "({}{})", operator.literal, right),
-            Expression::INFIX {
-                left,
-                operator,
-                right,
-            } => write!(f, "({} {} {})", left, operator.literal, right),
+            Expression::IDENT(expression) => write!(f, "{}", expression),
+            Expression::INT(expression) => write!(f, "{}", expression),
+            Expression::BOOLEAN(expression) => write!(f, "{}", expression),
+            Expression::IF(expression) => write!(f, "{}", expression),
+            Expression::PREFIX(expression) => write!(f, "{}", expression),
+            Expression::INFIX(expression) => write!(f, "{}", expression),
         }
     }
 }

@@ -1,8 +1,9 @@
 use std::error::Error;
 
 use crate::{
-    BlockStatement, Expression, ExpressionStatement, LetStatement, Lexer, Precedence, Program,
-    ReturnStatement, Statement, TokenKind,
+    BlockStatement, BooleanExpression, Expression, ExpressionStatement, IdentExpression,
+    IfExpression, InfixExpression, IntExpression, LetStatement, Lexer, Precedence,
+    PrefixExpression, Program, ReturnStatement, Statement, TokenKind,
 };
 
 pub struct Parser<'a> {
@@ -32,17 +33,17 @@ impl<'a> Parser<'a> {
             Some(token) if token.kind == TokenKind::IDENT => {
                 let value = token.literal.clone();
 
-                Expression::IDENT { token, value }
+                Expression::IDENT(IdentExpression { token, value })
             }
             Some(token) if token.kind == TokenKind::INT => {
                 let value = token.literal.parse::<i64>()?;
 
-                Expression::INT { token, value }
+                Expression::INT(IntExpression { token, value })
             }
             Some(token) if token.kind == TokenKind::TRUE || token.kind == TokenKind::FALSE => {
                 let value = token.kind == TokenKind::TRUE;
 
-                Expression::BOOLEAN { token, value }
+                Expression::BOOLEAN(BooleanExpression { token, value })
             }
             Some(token) if token.kind == TokenKind::IF => {
                 let condition = Box::new(Parser::parse_expression(lexer, Precedence::LOWEST)?);
@@ -66,20 +67,20 @@ impl<'a> Parser<'a> {
                     _ => None,
                 };
 
-                Expression::IF {
+                Expression::IF(IfExpression {
                     token,
                     condition,
                     consequence,
                     alternative,
-                }
+                })
             }
             Some(token) if token.kind == TokenKind::MINUS || token.kind == TokenKind::BANG => {
                 let right = Box::new(Parser::parse_expression(lexer, Precedence::PREFIX)?);
 
-                Expression::PREFIX {
+                Expression::PREFIX(PrefixExpression {
                     operator: token,
                     right,
-                }
+                })
             }
             _ => return Err("Expected expression".into()),
         };
@@ -92,11 +93,11 @@ impl<'a> Parser<'a> {
             let operator = lexer.next().unwrap();
             let right = Parser::parse_expression(lexer, Precedence::from(&operator.kind))?;
 
-            left = Expression::INFIX {
+            left = Expression::INFIX(InfixExpression {
                 operator,
                 left: Box::new(left),
                 right: Box::new(right),
-            };
+            });
         }
 
         Ok(left)
@@ -220,7 +221,11 @@ impl<'a> Parser<'a> {
 
 #[cfg(test)]
 mod tests {
-    use crate::{Expression, LetStatement, Lexer, ReturnStatement, Statement, TokenKind};
+    use crate::{
+        BooleanExpression, Expression, IdentExpression, IfExpression, InfixExpression,
+        IntExpression, LetStatement, Lexer, PrefixExpression, ReturnStatement, Statement,
+        TokenKind,
+    };
 
     use super::*;
 
@@ -249,7 +254,7 @@ mod tests {
                     assert_eq!(**identifier, **expected_identifier);
 
                     match expression {
-                        Expression::INT { value, .. } => {
+                        Expression::INT(IntExpression { value, .. }) => {
                             assert_eq!(value, expected_value);
                         }
                         _ => unreachable!(),
@@ -278,7 +283,7 @@ mod tests {
 
             match statement {
                 Statement::Return(ReturnStatement { expression, .. }) => match expression {
-                    Expression::INT { value, .. } => {
+                    Expression::INT(IntExpression { value, .. }) => {
                         assert_eq!(value, expected);
                     }
                     _ => unreachable!(),
@@ -303,7 +308,7 @@ mod tests {
 
         match statement {
             Statement::Expression(ExpressionStatement { expression, .. }) => match expression {
-                Expression::IDENT { value, .. } => {
+                Expression::IDENT(IdentExpression { value, .. }) => {
                     assert_eq!(&**value, "foobar");
                 }
                 _ => unreachable!(),
@@ -327,7 +332,7 @@ mod tests {
 
         match statement {
             Statement::Expression(ExpressionStatement { expression, .. }) => match expression {
-                Expression::INT { value, .. } => {
+                Expression::INT(IntExpression { value, .. }) => {
                     assert_eq!(*value, 5);
                 }
                 _ => unreachable!(),
@@ -354,7 +359,7 @@ mod tests {
 
             match statement {
                 Statement::Expression(ExpressionStatement { expression, .. }) => match expression {
-                    Expression::BOOLEAN { value, .. } => {
+                    Expression::BOOLEAN(BooleanExpression { value, .. }) => {
                         assert_eq!(*value, *expected);
                     }
                     _ => unreachable!(),
@@ -382,13 +387,13 @@ mod tests {
 
             match statement {
                 Statement::Expression(ExpressionStatement { expression, .. }) => match expression {
-                    Expression::PREFIX {
+                    Expression::PREFIX(PrefixExpression {
                         operator, right, ..
-                    } => {
+                    }) => {
                         assert_eq!(operator.kind, *expected_operator);
 
                         match right.as_ref() {
-                            Expression::INT { value, .. } => {
+                            Expression::INT(IntExpression { value, .. }) => {
                                 assert_eq!(value, expected_value);
                             }
                             _ => unreachable!(),
@@ -428,14 +433,14 @@ mod tests {
 
             match statement {
                 Statement::Expression(ExpressionStatement { expression, .. }) => match expression {
-                    Expression::INFIX {
+                    Expression::INFIX(InfixExpression {
                         left,
                         operator,
                         right,
                         ..
-                    } => {
+                    }) => {
                         match left.as_ref() {
-                            Expression::INT { value, .. } => {
+                            Expression::INT(IntExpression { value, .. }) => {
                                 assert_eq!(value, left_value);
                             }
                             _ => unreachable!(),
@@ -444,7 +449,7 @@ mod tests {
                         assert_eq!(operator.kind, *operator_kind);
 
                         match right.as_ref() {
-                            Expression::INT { value, .. } => {
+                            Expression::INT(IntExpression { value, .. }) => {
                                 assert_eq!(value, right_value);
                             }
                             _ => unreachable!(),
@@ -523,14 +528,14 @@ mod tests {
 
         match statement {
             Statement::Expression(ExpressionStatement { expression, .. }) => match expression {
-                Expression::IF {
+                Expression::IF(IfExpression {
                     condition,
                     consequence,
                     alternative,
                     ..
-                } => {
+                }) => {
                     match condition.as_ref() {
-                        Expression::INFIX { operator, .. } => {
+                        Expression::INFIX(InfixExpression { operator, .. }) => {
                             assert_eq!(operator.kind, TokenKind::LT);
                         }
                         _ => unreachable!(),
@@ -539,7 +544,7 @@ mod tests {
                     match &consequence.statements[0] {
                         Statement::Expression(ExpressionStatement { expression, .. }) => {
                             match expression {
-                                Expression::IDENT { value, .. } => {
+                                Expression::IDENT(IdentExpression { value, .. }) => {
                                     assert_eq!(&**value, "x");
                                 }
                                 _ => unreachable!(),
@@ -571,14 +576,14 @@ mod tests {
 
         match statement {
             Statement::Expression(ExpressionStatement { expression, .. }) => match expression {
-                Expression::IF {
+                Expression::IF(IfExpression {
                     condition,
                     consequence,
                     alternative,
                     ..
-                } => {
+                }) => {
                     match condition.as_ref() {
-                        Expression::INFIX { operator, .. } => {
+                        Expression::INFIX(InfixExpression { operator, .. }) => {
                             assert_eq!(operator.kind, TokenKind::LT);
                         }
                         _ => unreachable!(),
@@ -587,7 +592,7 @@ mod tests {
                     match &consequence.statements[0] {
                         Statement::Expression(ExpressionStatement { expression, .. }) => {
                             match expression {
-                                Expression::IDENT { value, .. } => {
+                                Expression::IDENT(IdentExpression { value, .. }) => {
                                     assert_eq!(&**value, "x");
                                 }
                                 _ => unreachable!(),
@@ -600,7 +605,7 @@ mod tests {
                         Some(alternative) => match &alternative.statements[0] {
                             Statement::Expression(ExpressionStatement { expression, .. }) => {
                                 match expression {
-                                    Expression::IDENT { value, .. } => {
+                                    Expression::IDENT(IdentExpression { value, .. }) => {
                                         assert_eq!(&**value, "y");
                                     }
                                     _ => unreachable!(),
