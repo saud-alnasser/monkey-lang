@@ -1,9 +1,10 @@
 use std::error::Error;
 
 use crate::{
-    BlockStatement, BooleanExpression, Expression, ExpressionStatement, FunctionExpression,
-    IdentExpression, IfExpression, InfixExpression, IntExpression, LetStatement, Lexer, Precedence,
-    PrefixExpression, Program, ReturnStatement, Statement, TokenKind,
+    BlockStatement, BooleanExpression, CallExpression, Expression, ExpressionStatement,
+    FunctionExpression, IdentExpression, IfExpression, InfixExpression, IntExpression,
+    LetStatement, Lexer, Precedence, PrefixExpression, Program, ReturnStatement, Statement,
+    TokenKind,
 };
 
 pub struct Parser<'a> {
@@ -31,18 +32,62 @@ impl<'a> Parser<'a> {
                 expression
             }
             Some(token) if token.kind == TokenKind::IDENT => {
-                let value = token.literal.clone();
+                let identifier = Expression::IDENT(IdentExpression {
+                    token: token.clone(),
+                    value: token.literal.clone(),
+                });
 
-                Expression::IDENT(IdentExpression { token, value })
+                match lexer.peek() {
+                    Some(next) if next.kind == TokenKind::LPAREN => {
+                        let function = Box::new(identifier);
+
+                        let arguments = {
+                            match lexer.next() {
+                                Some(token) if token.kind == TokenKind::LPAREN => (),
+                                _ => return Err("Expected opening parenthesis".into()),
+                            }
+
+                            let mut arguments = Vec::new();
+
+                            while let Some(token) = lexer.peek() {
+                                if token.kind == TokenKind::RPAREN {
+                                    break;
+                                }
+
+                                arguments
+                                    .push(Parser::parse_expression(lexer, Precedence::LOWEST)?);
+
+                                match lexer.peek() {
+                                    Some(token) if token.kind == TokenKind::COMMA => {
+                                        lexer.next().unwrap();
+                                    }
+                                    _ => continue,
+                                }
+                            }
+
+                            match lexer.next() {
+                                Some(token) if token.kind == TokenKind::RPAREN => (),
+                                _ => return Err("Expected closing parenthesis".into()),
+                            }
+
+                            arguments
+                        };
+
+                        Expression::CALL(CallExpression {
+                            token,
+                            function,
+                            arguments,
+                        })
+                    }
+                    _ => identifier,
+                }
             }
             Some(token) if token.kind == TokenKind::INT => {
                 let value = token.literal.parse::<i64>()?;
-
                 Expression::INT(IntExpression { token, value })
             }
             Some(token) if token.kind == TokenKind::TRUE || token.kind == TokenKind::FALSE => {
                 let value = token.kind == TokenKind::TRUE;
-
                 Expression::BOOLEAN(BooleanExpression { token, value })
             }
             Some(token) if token.kind == TokenKind::IF => {
@@ -117,11 +162,56 @@ impl<'a> Parser<'a> {
                     _ => return Err("Expected block statement".into()),
                 };
 
-                Expression::FUNCTION(FunctionExpression {
-                    token,
+                let function = Expression::FUNCTION(FunctionExpression {
+                    token: token.clone(),
                     parameters,
                     body,
-                })
+                });
+
+                match lexer.peek() {
+                    Some(next) if next.kind == TokenKind::LPAREN => {
+                        let function = Box::new(function);
+
+                        let arguments = {
+                            match lexer.next() {
+                                Some(token) if token.kind == TokenKind::LPAREN => (),
+                                _ => return Err("Expected opening parenthesis".into()),
+                            }
+
+                            let mut arguments = Vec::new();
+
+                            while let Some(token) = lexer.peek() {
+                                if token.kind == TokenKind::RPAREN {
+                                    break;
+                                }
+
+                                arguments
+                                    .push(Parser::parse_expression(lexer, Precedence::LOWEST)?);
+
+                                match lexer.peek() {
+                                    Some(token) if token.kind == TokenKind::COMMA => {
+                                        lexer.next().unwrap();
+                                    }
+                                    _ => continue,
+                                }
+                            }
+
+                            match lexer.next() {
+                                Some(token) if token.kind == TokenKind::RPAREN => (),
+                                _ => return Err("Expected closing parenthesis".into()),
+                            }
+
+                            arguments
+                        };
+
+                        Expression::CALL(CallExpression {
+                            token,
+                            function,
+                            arguments,
+                        })
+                    }
+                    _ => function,
+                }
             }
             Some(token) if token.kind == TokenKind::MINUS || token.kind == TokenKind::BANG => {
                 let right = Box::new(Parser::parse_expression(lexer, Precedence::PREFIX)?);
@@ -550,6 +640,16 @@ mod tests {
             ("2 / (5 + 5);", "(2 / (5 + 5));"),
             ("-(5 + 5);", "(-(5 + 5));"),
             ("!(true == true);", "(!(true == true));"),
+            // function calls
+            ("a + add(b * c) + d;", "((a + add((b * c))) + d);"),
+            (
+                "add(a, b, 1, 2 * 3, 4 + 5, add(6, 7 * 8));",
+                "add(a, b, 1, (2 * 3), (4 + 5), add(6, (7 * 8)));",
+            ),
+            (
+                "add(a + b + c * d / f + g);",
+                "add((((a + b) + ((c * d) / f)) + g));",
+            ),
         ];
 
         for (input, expected) in tests.iter() {
@@ -735,6 +835,126 @@ mod tests {
                             }
                         }
                         _ => unreachable!(),
+                    }
+                }
+                _ => unreachable!(),
+            },
+            _ => unreachable!(),
+        }
+    }
+
+    #[test]
+    fn test_call_expressions() {
+        let empty_call_input = "func();";
+
+        let lexer = Lexer::new(empty_call_input);
+        let mut parser = Parser::new(lexer);
+
+        let program = parser.parse().unwrap();
+
+        assert_eq!(program.statements.len(), 1);
+
+        let statement = &program.statements[0];
+
+        match statement {
+            Statement::Expression(ExpressionStatement { expression, .. }) => match expression {
+                Expression::CALL(call) => {
+                    match call.function.as_ref() {
+                        Expression::IDENT(IdentExpression { value, .. }) => {
+                            assert_eq!(&**value, "func");
+                        }
+                        _ => unreachable!(),
+                    }
+
+                    assert_eq!(call.arguments.len(), 0);
+                }
+                _ => unreachable!(),
+            },
+            _ => unreachable!(),
+        }
+
+        let call_input = "add(1, 2 * 3, 4 + 5);";
+
+        let lexer = Lexer::new(call_input);
+        let mut parser = Parser::new(lexer);
+
+        let program = parser.parse().unwrap();
+
+        assert_eq!(program.statements.len(), 1);
+
+        let statement = &program.statements[0];
+
+        match statement {
+            Statement::Expression(ExpressionStatement { expression, .. }) => match expression {
+                Expression::CALL(call) => {
+                    match call.function.as_ref() {
+                        Expression::IDENT(IdentExpression { value, .. }) => {
+                            assert_eq!(&**value, "add");
+                        }
+                        _ => unreachable!(),
+                    }
+
+                    assert_eq!(call.arguments.len(), 3);
+
+                    match &call.arguments[0] {
+                        Expression::INT(IntExpression { value, .. }) => {
+                            assert_eq!(*value, 1);
+                        }
+                        _ => unreachable!(),
+                    }
+
+                    match &call.arguments[1] {
+                        Expression::INFIX(InfixExpression { operator, .. }) => {
+                            assert_eq!(operator.kind, TokenKind::ASTERISK);
+                        }
+                        _ => unreachable!(),
+                    }
+
+                    match &call.arguments[2] {
+                        Expression::INFIX(InfixExpression { operator, .. }) => {
+                            assert_eq!(operator.kind, TokenKind::PLUS);
+                        }
+                        _ => unreachable!(),
+                    }
+                }
+                _ => unreachable!(),
+            },
+            _ => unreachable!(),
+        }
+
+        let literal_call_input = "fn(x, y){ x + y; }(2, 3);";
+
+        let lexer = Lexer::new(literal_call_input);
+        let mut parser = Parser::new(lexer);
+
+        let program = parser.parse().unwrap();
+
+        assert_eq!(program.statements.len(), 1);
+
+        let statement = &program.statements[0];
+
+        match statement {
+            Statement::Expression(ExpressionStatement { expression, .. }) => match expression {
+                Expression::CALL(call) => {
+                    match call.function.as_ref() {
+                        Expression::FUNCTION(FunctionExpression { parameters, .. }) => {
+                            assert_eq!(parameters.len(), 2);
+                        }
+                        _ => unreachable!(),
+                    }
+
+                    assert_eq!(call.arguments.len(), 2);
+
+                    let expected = [(TokenKind::INT, 2), (TokenKind::INT, 3)];
+
+                    for (i, (expected_kind, expected_value)) in expected.iter().enumerate() {
+                        match &call.arguments[i] {
+                            Expression::INT(IntExpression { token, value }) => {
+                                assert_eq!(token.kind, *expected_kind);
+                                assert_eq!(*value, *expected_value);
+                            }
+                            _ => unreachable!(),
+                        }
                     }
                 }
                 _ => unreachable!(),

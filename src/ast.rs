@@ -167,6 +167,33 @@ impl Display for FunctionExpression {
 }
 
 #[derive(Debug, PartialEq, Clone)]
+pub struct CallExpression {
+    pub token: Token,
+    pub function: Box<Expression>,
+    pub arguments: Vec<Expression>,
+}
+
+impl Display for CallExpression {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut output = String::new();
+
+        let mut arguments = String::new();
+
+        for (i, argument) in self.arguments.iter().enumerate() {
+            arguments.push_str(&format!("{}", argument));
+
+            if i < self.arguments.len() - 1 {
+                arguments.push_str(", ");
+            }
+        }
+
+        output.push_str(&format!("{}({})", self.function, arguments));
+
+        write!(f, "{}", output)
+    }
+}
+
+#[derive(Debug, PartialEq, Clone)]
 pub struct PrefixExpression {
     pub operator: Token,
     pub right: Box<Expression>,
@@ -202,6 +229,7 @@ pub enum Expression {
     BOOLEAN(BooleanExpression),
     IF(IfExpression),
     FUNCTION(FunctionExpression),
+    CALL(CallExpression),
     PREFIX(PrefixExpression),
     INFIX(InfixExpression),
 }
@@ -214,6 +242,7 @@ impl Display for Expression {
             Expression::BOOLEAN(expression) => write!(f, "{}", expression),
             Expression::IF(expression) => write!(f, "{}", expression),
             Expression::FUNCTION(expression) => write!(f, "{}", expression),
+            Expression::CALL(expression) => write!(f, "{}", expression),
             Expression::PREFIX(expression) => write!(f, "{}", expression),
             Expression::INFIX(expression) => write!(f, "{}", expression),
         }
