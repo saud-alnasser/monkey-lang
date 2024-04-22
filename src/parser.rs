@@ -1,8 +1,8 @@
 use std::error::Error;
 
 use crate::{
-    BlockStatement, BooleanExpression, Expression, ExpressionStatement, IdentExpression,
-    IfExpression, InfixExpression, IntExpression, LetStatement, Lexer, Precedence,
+    BlockStatement, BooleanExpression, Expression, ExpressionStatement, FunctionExpression,
+    IdentExpression, IfExpression, InfixExpression, IntExpression, LetStatement, Lexer, Precedence,
     PrefixExpression, Program, ReturnStatement, Statement, TokenKind,
 };
 
@@ -72,6 +72,55 @@ impl<'a> Parser<'a> {
                     condition,
                     consequence,
                     alternative,
+                })
+            }
+            Some(token) if token.kind == TokenKind::FUNCTION => {
+                let parameters = {
+                    match lexer.next() {
+                        Some(token) if token.kind == TokenKind::LPAREN => (),
+                        _ => return Err("Expected opening parenthesis".into()),
+                    }
+
+                    let mut parameters = Vec::new();
+
+                    while let Some(token) = lexer.peek() {
+                        if token.kind == TokenKind::RPAREN {
+                            break;
+                        }
+
+                        match lexer.next() {
+                            Some(token) if token.kind == TokenKind::IDENT => {
+                                let value = token.literal.clone();
+                                parameters.push(IdentExpression { token, value });
+                            }
+                            _ => return Err("Expected identifier".into()),
+                        }
+
+                        match lexer.peek() {
+                            Some(token) if token.kind == TokenKind::COMMA => {
+                                lexer.next().unwrap();
+                            }
+                            _ => continue,
+                        }
+                    }
+
+                    match lexer.next() {
+                        Some(token) if token.kind == TokenKind::RPAREN => (),
+                        _ => return Err("Expected closing parenthesis".into()),
+                    }
+
+                    parameters
+                };
+
+                let body = match Parser::parse_statement(lexer)? {
+                    Statement::Block(block) => block,
+                    _ => return Err("Expected block statement".into()),
+                };
+
+                Expression::FUNCTION(FunctionExpression {
+                    token,
+                    parameters,
+                    body,
                 })
             }
             Some(token) if token.kind == TokenKind::MINUS || token.kind == TokenKind::BANG => {
@@ -514,7 +563,7 @@ mod tests {
     }
 
     #[test]
-    fn test_if_expression() {
+    fn test_if_expressions() {
         let input = "if (x < y) { x; };";
 
         let lexer = Lexer::new(input);
@@ -562,7 +611,7 @@ mod tests {
     }
 
     #[test]
-    fn test_if_else_expression() {
+    fn test_if_else_expressions() {
         let input = "if (x < y) { x; } else { y; };";
 
         let lexer = Lexer::new(input);
@@ -613,6 +662,78 @@ mod tests {
                             }
                             _ => unreachable!(),
                         },
+                        _ => unreachable!(),
+                    }
+                }
+                _ => unreachable!(),
+            },
+            _ => unreachable!(),
+        }
+    }
+
+    #[test]
+    fn test_function_expressions() {
+        let test_parameters: [(&str, &[&str]); 4] = [
+            ("fn() {};", &[]),
+            ("fn(x) {};", &["x"]),
+            ("fn(x, y) {};", &["x", "y"]),
+            ("fn(x, y, z) {};", &["x", "y", "z"]),
+        ];
+
+        for (input, expected) in test_parameters.iter() {
+            let lexer = Lexer::new(input);
+            let mut parser = Parser::new(lexer);
+
+            let program = parser.parse().unwrap();
+
+            assert_eq!(program.statements.len(), 1);
+
+            let statement = &program.statements[0];
+
+            match statement {
+                Statement::Expression(ExpressionStatement { expression, .. }) => match expression {
+                    Expression::FUNCTION(FunctionExpression { parameters, .. }) => {
+                        assert_eq!(parameters.len(), expected.len());
+
+                        for (i, expected) in expected.iter().enumerate() {
+                            match &parameters[i] {
+                                IdentExpression { value, .. } => {
+                                    assert_eq!(&**value, *expected);
+                                }
+                            }
+                        }
+                    }
+                    _ => unreachable!(),
+                },
+                _ => unreachable!(),
+            }
+        }
+
+        let test_body = "fn(x, y) { x + y; };";
+
+        let lexer = Lexer::new(test_body);
+        let mut parser = Parser::new(lexer);
+
+        let program = parser.parse().unwrap();
+
+        assert_eq!(program.statements.len(), 1);
+
+        let statement = &program.statements[0];
+
+        match statement {
+            Statement::Expression(ExpressionStatement { expression, .. }) => match expression {
+                Expression::FUNCTION(FunctionExpression { body, .. }) => {
+                    assert_eq!(body.statements.len(), 1);
+
+                    match &body.statements[0] {
+                        Statement::Expression(ExpressionStatement { expression, .. }) => {
+                            match expression {
+                                Expression::INFIX(InfixExpression { operator, .. }) => {
+                                    assert_eq!(operator.kind, TokenKind::PLUS);
+                                }
+                                _ => unreachable!(),
+                            }
+                        }
                         _ => unreachable!(),
                     }
                 }
