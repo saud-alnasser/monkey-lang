@@ -1,6 +1,9 @@
 use std::error::Error;
 
-use crate::{Expression, Lexer, Precedence, Program, Statement, TokenKind};
+use crate::{
+    BlockStatement, Expression, ExpressionStatement, LetStatement, Lexer, Precedence, Program,
+    ReturnStatement, Statement, TokenKind,
+};
 
 pub struct Parser<'a> {
     lexer: Lexer<'a>,
@@ -15,28 +18,8 @@ impl<'a> Parser<'a> {
         lexer: &mut Lexer,
         precedence: Precedence,
     ) -> Result<Expression, Box<dyn Error>> {
-        let mut left = match lexer.peek() {
-            Some(token) if token.kind == TokenKind::IDENT => {
-                let token = lexer.next().unwrap();
-                let value = token.literal.clone();
-
-                Expression::IDENT { token, value }
-            }
-            Some(token) if token.kind == TokenKind::INT => {
-                let token = lexer.next().unwrap();
-                let value = token.literal.parse::<i64>()?;
-
-                Expression::INT { token, value }
-            }
-            Some(token) if token.kind == TokenKind::TRUE || token.kind == TokenKind::FALSE => {
-                let token = lexer.next().unwrap();
-                let value = token.kind == TokenKind::TRUE;
-
-                Expression::BOOLEAN { token, value }
-            }
+        let mut left = match lexer.next() {
             Some(token) if token.kind == TokenKind::LPAREN => {
-                lexer.next().unwrap();
-
                 let expression = Parser::parse_expression(lexer, Precedence::LOWEST)?;
 
                 match lexer.next() {
@@ -46,10 +29,57 @@ impl<'a> Parser<'a> {
 
                 expression
             }
+            Some(token) if token.kind == TokenKind::IDENT => {
+                let value = token.literal.clone();
+
+                Expression::IDENT { token, value }
+            }
+            Some(token) if token.kind == TokenKind::INT => {
+                let value = token.literal.parse::<i64>()?;
+
+                Expression::INT { token, value }
+            }
+            Some(token) if token.kind == TokenKind::TRUE || token.kind == TokenKind::FALSE => {
+                let value = token.kind == TokenKind::TRUE;
+
+                Expression::BOOLEAN { token, value }
+            }
+            Some(token) if token.kind == TokenKind::IF => {
+                let condition = Box::new(Parser::parse_expression(lexer, Precedence::LOWEST)?);
+
+                let consequence = match Parser::parse_statement(lexer)? {
+                    Statement::Block(block) => block,
+                    _ => return Err("Expected block statement".into()),
+                };
+
+                let alternative = match lexer.peek() {
+                    Some(token) if token.kind == TokenKind::ELSE => {
+                        lexer.next().unwrap();
+
+                        let block = match Parser::parse_statement(lexer)? {
+                            Statement::Block(block) => block,
+                            _ => return Err("Expected block statement".into()),
+                        };
+
+                        Some(block)
+                    }
+                    _ => None,
+                };
+
+                Expression::IF {
+                    token,
+                    condition,
+                    consequence,
+                    alternative,
+                }
+            }
             Some(token) if token.kind == TokenKind::MINUS || token.kind == TokenKind::BANG => {
-                let operator = lexer.next().unwrap();
                 let right = Box::new(Parser::parse_expression(lexer, Precedence::PREFIX)?);
-                Expression::PREFIX { operator, right }
+
+                Expression::PREFIX {
+                    operator: token,
+                    right,
+                }
             }
             _ => return Err("Expected expression".into()),
         };
@@ -63,7 +93,7 @@ impl<'a> Parser<'a> {
             let right = Parser::parse_expression(lexer, Precedence::from(&operator.kind))?;
 
             left = Expression::INFIX {
-                operator: operator,
+                operator,
                 left: Box::new(left),
                 right: Box::new(right),
             };
@@ -74,6 +104,29 @@ impl<'a> Parser<'a> {
 
     fn parse_statement(lexer: &mut Lexer) -> Result<Statement, Box<dyn Error>> {
         match lexer.peek() {
+            Some(token) if token.kind == TokenKind::LBRACE => {
+                let token = match lexer.next() {
+                    Some(token) if token.kind == TokenKind::LBRACE => token,
+                    _ => return Err("Expected opening brace".into()),
+                };
+
+                let mut statements = Vec::new();
+
+                while let Some(token) = lexer.peek() {
+                    if token.kind == TokenKind::RBRACE {
+                        break;
+                    }
+
+                    statements.push(Parser::parse_statement(lexer)?);
+                }
+
+                match lexer.next() {
+                    Some(token) if token.kind == TokenKind::RBRACE => (),
+                    _ => return Err("Expected closing brace".into()),
+                }
+
+                Ok(Statement::Block(BlockStatement { token, statements }))
+            }
             Some(token) if token.kind == TokenKind::LET => {
                 let token = match lexer.next() {
                     Some(token) if token.kind == TokenKind::LET => token,
@@ -97,11 +150,11 @@ impl<'a> Parser<'a> {
                     _ => return Err("Expected semicolon".into()),
                 }
 
-                Ok(Statement::Let {
+                Ok(Statement::Let(LetStatement {
                     token,
                     identifier,
                     expression,
-                })
+                }))
             }
             Some(token) if token.kind == TokenKind::RETURN => {
                 let token = match lexer.next() {
@@ -116,7 +169,7 @@ impl<'a> Parser<'a> {
                     _ => return Err("Expected semicolon".into()),
                 }
 
-                Ok(Statement::Return { token, expression })
+                Ok(Statement::Return(ReturnStatement { token, expression }))
             }
             _ => {
                 let token = match lexer.peek() {
@@ -132,7 +185,10 @@ impl<'a> Parser<'a> {
                     _ => return Err("Expected semicolon".into()),
                 }
 
-                Ok(Statement::Expression { token, expression })
+                Ok(Statement::Expression(ExpressionStatement {
+                    token,
+                    expression,
+                }))
             }
         }
     }
@@ -164,7 +220,7 @@ impl<'a> Parser<'a> {
 
 #[cfg(test)]
 mod tests {
-    use crate::{Expression, Lexer, Statement, TokenKind};
+    use crate::{Expression, LetStatement, Lexer, ReturnStatement, Statement, TokenKind};
 
     use super::*;
 
@@ -185,11 +241,11 @@ mod tests {
             let statement = &program.statements[i];
 
             match statement {
-                Statement::Let {
+                Statement::Let(LetStatement {
                     identifier,
                     expression,
                     ..
-                } => {
+                }) => {
                     assert_eq!(**identifier, **expected_identifier);
 
                     match expression {
@@ -221,7 +277,7 @@ mod tests {
             let statement = &program.statements[i];
 
             match statement {
-                Statement::Return { expression, .. } => match expression {
+                Statement::Return(ReturnStatement { expression, .. }) => match expression {
                     Expression::INT { value, .. } => {
                         assert_eq!(value, expected);
                     }
@@ -246,7 +302,7 @@ mod tests {
         let statement = &program.statements[0];
 
         match statement {
-            Statement::Expression { expression, .. } => match expression {
+            Statement::Expression(ExpressionStatement { expression, .. }) => match expression {
                 Expression::IDENT { value, .. } => {
                     assert_eq!(&**value, "foobar");
                 }
@@ -270,7 +326,7 @@ mod tests {
         let statement = &program.statements[0];
 
         match statement {
-            Statement::Expression { expression, .. } => match expression {
+            Statement::Expression(ExpressionStatement { expression, .. }) => match expression {
                 Expression::INT { value, .. } => {
                     assert_eq!(*value, 5);
                 }
@@ -297,7 +353,7 @@ mod tests {
             let statement = &program.statements[i];
 
             match statement {
-                Statement::Expression { expression, .. } => match expression {
+                Statement::Expression(ExpressionStatement { expression, .. }) => match expression {
                     Expression::BOOLEAN { value, .. } => {
                         assert_eq!(*value, *expected);
                     }
@@ -325,7 +381,7 @@ mod tests {
             let statement = &program.statements[i];
 
             match statement {
-                Statement::Expression { expression, .. } => match expression {
+                Statement::Expression(ExpressionStatement { expression, .. }) => match expression {
                     Expression::PREFIX {
                         operator, right, ..
                     } => {
@@ -371,7 +427,7 @@ mod tests {
             let statement = &program.statements[i];
 
             match statement {
-                Statement::Expression { expression, .. } => match expression {
+                Statement::Expression(ExpressionStatement { expression, .. }) => match expression {
                     Expression::INFIX {
                         left,
                         operator,
@@ -449,6 +505,115 @@ mod tests {
             let program = parser.parse().unwrap();
 
             assert_eq!(format!("{}", program), *expected);
+        }
+    }
+
+    #[test]
+    fn test_if_expression() {
+        let input = "if (x < y) { x; };";
+
+        let lexer = Lexer::new(input);
+        let mut parser = Parser::new(lexer);
+
+        let program = parser.parse().unwrap();
+
+        assert_eq!(program.statements.len(), 1);
+
+        let statement = &program.statements[0];
+
+        match statement {
+            Statement::Expression(ExpressionStatement { expression, .. }) => match expression {
+                Expression::IF {
+                    condition,
+                    consequence,
+                    alternative,
+                    ..
+                } => {
+                    match condition.as_ref() {
+                        Expression::INFIX { operator, .. } => {
+                            assert_eq!(operator.kind, TokenKind::LT);
+                        }
+                        _ => unreachable!(),
+                    }
+
+                    match &consequence.statements[0] {
+                        Statement::Expression(ExpressionStatement { expression, .. }) => {
+                            match expression {
+                                Expression::IDENT { value, .. } => {
+                                    assert_eq!(&**value, "x");
+                                }
+                                _ => unreachable!(),
+                            }
+                        }
+                        _ => unreachable!(),
+                    }
+
+                    assert_eq!(*alternative, None);
+                }
+                _ => unreachable!(),
+            },
+            _ => unreachable!(),
+        }
+    }
+
+    #[test]
+    fn test_if_else_expression() {
+        let input = "if (x < y) { x; } else { y; };";
+
+        let lexer = Lexer::new(input);
+        let mut parser = Parser::new(lexer);
+
+        let program = parser.parse().unwrap();
+
+        assert_eq!(program.statements.len(), 1);
+
+        let statement = &program.statements[0];
+
+        match statement {
+            Statement::Expression(ExpressionStatement { expression, .. }) => match expression {
+                Expression::IF {
+                    condition,
+                    consequence,
+                    alternative,
+                    ..
+                } => {
+                    match condition.as_ref() {
+                        Expression::INFIX { operator, .. } => {
+                            assert_eq!(operator.kind, TokenKind::LT);
+                        }
+                        _ => unreachable!(),
+                    }
+
+                    match &consequence.statements[0] {
+                        Statement::Expression(ExpressionStatement { expression, .. }) => {
+                            match expression {
+                                Expression::IDENT { value, .. } => {
+                                    assert_eq!(&**value, "x");
+                                }
+                                _ => unreachable!(),
+                            }
+                        }
+                        _ => unreachable!(),
+                    }
+
+                    match alternative {
+                        Some(alternative) => match &alternative.statements[0] {
+                            Statement::Expression(ExpressionStatement { expression, .. }) => {
+                                match expression {
+                                    Expression::IDENT { value, .. } => {
+                                        assert_eq!(&**value, "y");
+                                    }
+                                    _ => unreachable!(),
+                                }
+                            }
+                            _ => unreachable!(),
+                        },
+                        _ => unreachable!(),
+                    }
+                }
+                _ => unreachable!(),
+            },
+            _ => unreachable!(),
         }
     }
 }
