@@ -1,6 +1,6 @@
 use std::fmt::Display;
 
-use crate::{Expression, ExpressionStatement, IntExpression, Statement};
+use crate::{BooleanExpression, Expression, ExpressionStatement, IntExpression, Statement};
 
 #[derive(Debug, PartialEq)]
 pub enum DataType {
@@ -26,6 +26,7 @@ impl Evaluator {
         match statement {
             Statement::Expression(ExpressionStatement { expression, .. }) => match expression {
                 Expression::INT(IntExpression { value, .. }) => DataType::INT(value),
+                Expression::BOOLEAN(BooleanExpression { value, .. }) => DataType::BOOLEAN(value),
                 _ => DataType::NULL,
             },
             _ => DataType::NULL,
@@ -52,6 +53,24 @@ mod tests {
                 match Evaluator::eval(statement) {
                     DataType::INT(value) => assert_eq!(value, expected),
                     _ => panic!("expected an integer, got something else"),
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_eval_boolean_expression() {
+        let tests = vec![("true;", true), ("false;", false)];
+
+        for (input, expected) in tests {
+            let lexer = Lexer::new(input);
+            let mut parser = Parser::new(lexer);
+            let program = parser.parse().unwrap();
+
+            for statement in program.statements {
+                match Evaluator::eval(statement) {
+                    DataType::BOOLEAN(value) => assert_eq!(value, expected),
+                    _ => panic!("expected a boolean, got something else"),
                 }
             }
         }
