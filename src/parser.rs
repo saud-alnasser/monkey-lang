@@ -28,6 +28,12 @@ impl<'a> Parser<'a> {
 
                 Expression::INT { token, value }
             }
+            Some(token) if token.kind == TokenKind::TRUE || token.kind == TokenKind::FALSE => {
+                let token = lexer.next().unwrap();
+                let value = token.kind == TokenKind::TRUE;
+
+                Expression::BOOLEAN { token, value }
+            }
             Some(token) if token.kind == TokenKind::MINUS || token.kind == TokenKind::BANG => {
                 let operator = lexer.next().unwrap();
                 let right = Box::new(Parser::parse_expression(lexer, Precedence::PREFIX)?);
@@ -216,7 +222,7 @@ mod tests {
     }
 
     #[test]
-    fn test_identifier_expressions() {
+    fn test_identifier_literal_expressions() {
         let input = "foobar;";
 
         let lexer = Lexer::new(input);
@@ -260,6 +266,34 @@ mod tests {
                 _ => unreachable!(),
             },
             _ => unreachable!(),
+        }
+    }
+
+    #[test]
+    fn test_boolean_literal_expressions() {
+        let input = "true; false;";
+
+        let lexer = Lexer::new(input);
+        let mut parser = Parser::new(lexer);
+
+        let program = parser.parse().unwrap();
+
+        assert_eq!(program.statements.len(), 2);
+
+        let expected = [true, false];
+
+        for (i, expected) in expected.iter().enumerate() {
+            let statement = &program.statements[i];
+
+            match statement {
+                Statement::Expression { expression, .. } => match expression {
+                    Expression::BOOLEAN { value, .. } => {
+                        assert_eq!(*value, *expected);
+                    }
+                    _ => unreachable!(),
+                },
+                _ => unreachable!(),
+            }
         }
     }
 
@@ -353,6 +387,57 @@ mod tests {
                 },
                 _ => unreachable!(),
             }
+        }
+    }
+
+    #[test]
+    fn test_operator_precedence_parsing() {
+        let tests = [
+            // arithmetic operators
+            ("1 + 2;", "(1 + 2);"),
+            ("1 - 2;", "(1 - 2);"),
+            ("1 * 2;", "(1 * 2);"),
+            ("1 / 2;", "(1 / 2);"),
+            // comparison operators
+            ("1 > 2;", "(1 > 2);"),
+            ("1 < 2;", "(1 < 2);"),
+            ("1 == 2;", "(1 == 2);"),
+            ("1 != 2;", "(1 != 2);"),
+            // logical operators
+            ("true == true;", "(true == true);"),
+            ("true != false;", "(true != false);"),
+            // prefix operators
+            ("-a;", "(-a);"),
+            ("!true;", "(!true);"),
+            // combined operators
+            ("a + b + c;", "((a + b) + c);"),
+            ("a + b - c;", "((a + b) - c);"),
+            ("a * b * c;", "((a * b) * c);"),
+            ("a * b / c;", "((a * b) / c);"),
+            ("a + b / c;", "(a + (b / c));"),
+            ("a + b * c + d / e - f;", "(((a + (b * c)) + (d / e)) - f);"),
+            ("3 + 4; -5 * 5;", "(3 + 4);((-5) * 5);"),
+            ("5 > 4 == 3 < 4;", "((5 > 4) == (3 < 4));"),
+            ("5 < 4 != 3 > 4;", "((5 < 4) != (3 > 4));"),
+            (
+                "3 + 4 * 5 == 3 * 1 + 4 * 5;",
+                "((3 + (4 * 5)) == ((3 * 1) + (4 * 5)));",
+            ),
+            // grouping
+            // ("1 + (2 + 3) + 4;", "((1 + (2 + 3)) + 4);"),
+            // ("(5 + 5) * 2;", "((5 + 5) * 2);"),
+            // ("2 / (5 + 5);", "(2 / (5 + 5));"),
+            // ("-(5 + 5);", "(-(5 + 5));"),
+            // ("!(true == true);", "(!(true == true));"),
+        ];
+
+        for (input, expected) in tests.iter() {
+            let lexer = Lexer::new(input);
+            let mut parser = Parser::new(lexer);
+
+            let program = parser.parse().unwrap();
+
+            assert_eq!(format!("{}", program), *expected);
         }
     }
 }
