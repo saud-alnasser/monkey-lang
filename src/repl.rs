@@ -17,15 +17,11 @@ impl REPL {
             let mut parser = Parser::new(lexer);
 
             match parser.parse() {
-                Ok(program) => {
-                    println!("{}", program);
-                }
-                Err(e) => {
-                    println!("{}", e);
-
-                    input.clear();
-                }
+                Ok(program) => println!("{}", program),
+                Err(e) => println!("{}", e),
             }
+
+            input.clear();
         }
     }
 }
