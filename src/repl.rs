@@ -18,7 +18,7 @@ impl REPL {
 
             match parser.parse() {
                 Ok(program) => {
-                    println!("{:#?}", program);
+                    println!("{}", program);
                 }
                 Err(e) => {
                     println!("{}", e);

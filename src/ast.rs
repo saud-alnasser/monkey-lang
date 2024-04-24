@@ -95,6 +95,12 @@ pub enum Expression {
         token: Token,
         value: bool,
     },
+    IF {
+        token: Token,
+        condition: Box<Expression>,
+        consequence: BlockStatement,
+        alternative: Option<BlockStatement>,
+    },
     PREFIX {
         operator: Token,
         right: Box<Expression>,
@@ -112,6 +118,22 @@ impl Display for Expression {
             Expression::IDENT { value, .. } => write!(f, "{}", value),
             Expression::INT { value, .. } => write!(f, "{}", value),
             Expression::BOOLEAN { value, .. } => write!(f, "{}", value),
+            Expression::IF {
+                condition,
+                consequence,
+                alternative,
+                ..
+            } => {
+                let mut output = String::new();
+
+                output.push_str(&format!("if {} {}", condition, consequence));
+
+                if let Some(alternative) = alternative {
+                    output.push_str(&format!(" else {}", alternative));
+                }
+
+                write!(f, "{}", output)
+            }
             Expression::PREFIX { operator, right } => write!(f, "({}{})", operator.literal, right),
             Expression::INFIX {
                 left,
@@ -123,32 +145,75 @@ impl Display for Expression {
 }
 
 #[derive(Debug, PartialEq, Clone)]
+pub struct BlockStatement {
+    pub token: Token,
+    pub statements: Vec<Statement>,
+}
+
+impl Display for BlockStatement {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut output = String::new();
+
+        for statement in &self.statements {
+            output.push_str(&format!("{}", statement));
+        }
+
+        write!(f, "{{{}}}", output)
+    }
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub struct LetStatement {
+    pub token: Token,
+    pub identifier: Box<str>,
+    pub expression: Expression,
+}
+
+impl Display for LetStatement {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "let {} = {};", self.identifier, self.expression)
+    }
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub struct ReturnStatement {
+    pub token: Token,
+    pub expression: Expression,
+}
+
+impl Display for ReturnStatement {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "return {};", self.expression)
+    }
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub struct ExpressionStatement {
+    pub token: Token,
+    pub expression: Expression,
+}
+
+impl Display for ExpressionStatement {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{};", self.expression)
+    }
+}
+
+#[derive(Debug, PartialEq, Clone)]
 pub enum Statement {
-    Let {
-        token: Token,
-        identifier: Box<str>,
-        expression: Expression,
-    },
-    Return {
-        token: Token,
-        expression: Expression,
-    },
-    Expression {
-        token: Token,
-        expression: Expression,
-    },
+    Block(BlockStatement),
+    Let(LetStatement),
+    Return(ReturnStatement),
+    Expression(ExpressionStatement),
 }
 
 impl Display for Statement {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Statement::Let {
-                identifier,
-                expression,
-                ..
-            } => write!(f, "let {} = {};", identifier, expression),
-            Statement::Return { expression, .. } => write!(f, "return {};", expression),
-            Statement::Expression { expression, .. } => write!(f, "{};", expression),
+            Statement::Block(statement) => write!(f, "{}", statement),
+            Statement::Let(statement) => write!(f, "{}", statement),
+            Statement::Return(statement) => write!(f, "{}", statement),
+            Statement::Expression(statement) => write!(f, "{}", statement),
         }
     }
 }
