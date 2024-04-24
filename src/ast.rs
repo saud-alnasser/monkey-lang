@@ -62,7 +62,7 @@ pub struct Token {
 pub enum Precedence {
     LOWEST = 1,
     EQUIVALENCE = 2, // equivalence: == or !=
-    COMPARISON = 3,  // comparison: > or <
+    COMPARISON = 3,  // comparison: > or < or >= or <=
     SUM = 4,         // sum: + or -
     PRODUCT = 5,     // product: * or /
     PREFIX = 6,      // prefix: -x or !x
@@ -73,7 +73,9 @@ impl From<&TokenKind> for Precedence {
     fn from(kind: &TokenKind) -> Self {
         match kind {
             TokenKind::EQ | TokenKind::NEQ => Precedence::EQUIVALENCE,
-            TokenKind::LT | TokenKind::GT => Precedence::COMPARISON,
+            TokenKind::LT | TokenKind::GT | TokenKind::LTE | TokenKind::GTE => {
+                Precedence::COMPARISON
+            }
             TokenKind::PLUS | TokenKind::MINUS => Precedence::SUM,
             TokenKind::ASTERISK | TokenKind::SLASH => Precedence::PRODUCT,
             _ => Precedence::LOWEST,
