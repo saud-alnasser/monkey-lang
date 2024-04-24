@@ -1,3 +1,21 @@
+## 0.0.5 (2024-04-24)
+
+### Features
+
+#### handle boolean expressions (#35)
+
+#### handle grouped expressions (#36)
+
+#### handle if expressions (#37)
+
+#### handle function expressions (#39)
+
+#### handle call expressions (#40)
+
+#### change repl to reset on each loop (#41)
+
+#### make better error messages (#42)
+
 ## 0.0.4 (2024-04-20)
 
 ### Features
