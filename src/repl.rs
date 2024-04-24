@@ -2,6 +2,20 @@ use std::io::{self, Write};
 
 use crate::{Lexer, Parser};
 
+static MONKEY_FACE: &str = r#"            
+            __,__
+   .--.  .-"     "-.  .--.
+  / .. \/  .-. .-.  \/ .. \
+ | |  '|  /   Y   \  |'  | |
+ | \   \  \ 0 | 0 /  /   / |
+  \ '- ,\.-"""""""-./, -' /
+   ''-' /_   ^ ^   _\ '-''
+       |  \._   _./  |
+       \   \ '~' /   /
+        '._ '-=-' _.'
+           '-----'
+"#;
+
 pub struct REPL;
 
 impl REPL {
@@ -18,7 +32,12 @@ impl REPL {
 
             match parser.parse() {
                 Ok(program) => println!("{}", program),
-                Err(e) => println!("{}", e),
+                Err(error) => {
+                    eprintln!("{}", MONKEY_FACE);
+                    eprintln!("Woops! We ran into some monkey business here!");
+                    eprintln!(" parser error:");
+                    eprintln!("\t{}", error);
+                }
             }
 
             input.clear();

@@ -26,7 +26,14 @@ impl<'a> Parser<'a> {
 
                 match lexer.next() {
                     Some(token) if token.kind == TokenKind::RPAREN => (),
-                    _ => return Err("Expected closing parenthesis".into()),
+                    Some(token) => {
+                        return Err(format!(
+                            "expected closing parenthesis, got {} at {}:{}",
+                            token.literal, token.span.line, token.span.column
+                        )
+                        .into())
+                    }
+                    None => return Err(format!("expected closing parenthesis, got EOF").into()),
                 }
 
                 expression
@@ -44,7 +51,14 @@ impl<'a> Parser<'a> {
                         let arguments = {
                             match lexer.next() {
                                 Some(token) if token.kind == TokenKind::LPAREN => (),
-                                _ => return Err("Expected opening parenthesis".into()),
+                                Some(token) => {
+                                    return Err(format!(
+                                        "expected opening parenthesis, got {} at {}:{}",
+                                        token.literal, token.span.line, token.span.column
+                                    )
+                                    .into())
+                                }
+                                None => return Err("expected opening parenthesis, got EOF".into()),
                             }
 
                             let mut arguments = Vec::new();
@@ -67,7 +81,18 @@ impl<'a> Parser<'a> {
 
                             match lexer.next() {
                                 Some(token) if token.kind == TokenKind::RPAREN => (),
-                                _ => return Err("Expected closing parenthesis".into()),
+                                Some(token) => {
+                                    return Err(format!(
+                                        "expected closing parenthesis, got {} at {}:{}",
+                                        token.literal, token.span.line, token.span.column
+                                    )
+                                    .into())
+                                }
+                                None => {
+                                    return Err(
+                                        format!("expected closing parenthesis, got EOF").into()
+                                    )
+                                }
                             }
 
                             arguments
@@ -94,8 +119,28 @@ impl<'a> Parser<'a> {
                 let condition = Box::new(Parser::parse_expression(lexer, Precedence::LOWEST)?);
 
                 let consequence = match Parser::parse_statement(lexer)? {
-                    Statement::Block(block) => block,
-                    _ => return Err("Expected block statement".into()),
+                    Statement::Block(expression) => expression,
+                    Statement::Let(expression) => {
+                        return Err(format!(
+                            "expected block statement, got let statement at {}:{}",
+                            expression.token.span.line, expression.token.span.column
+                        )
+                        .into())
+                    }
+                    Statement::Return(expression) => {
+                        return Err(format!(
+                            "expected block statement, got return statement at {}:{}",
+                            expression.token.span.line, expression.token.span.column
+                        )
+                        .into())
+                    }
+                    Statement::Expression(expression) => {
+                        return Err(format!(
+                            "expected block statement, got expression statement at {}:{}",
+                            expression.token.span.line, expression.token.span.column
+                        )
+                        .into())
+                    }
                 };
 
                 let alternative = match lexer.peek() {
@@ -103,8 +148,28 @@ impl<'a> Parser<'a> {
                         lexer.next().unwrap();
 
                         let block = match Parser::parse_statement(lexer)? {
-                            Statement::Block(block) => block,
-                            _ => return Err("Expected block statement".into()),
+                            Statement::Block(expression) => expression,
+                            Statement::Let(expression) => {
+                                return Err(format!(
+                                    "expected block statement, got let statement at {}:{}",
+                                    expression.token.span.line, expression.token.span.column
+                                )
+                                .into())
+                            }
+                            Statement::Return(expression) => {
+                                return Err(format!(
+                                    "expected block statement, got return statement at {}:{}",
+                                    expression.token.span.line, expression.token.span.column
+                                )
+                                .into())
+                            }
+                            Statement::Expression(expression) => {
+                                return Err(format!(
+                                    "expected block statement, got expression statement at {}:{}",
+                                    expression.token.span.line, expression.token.span.column
+                                )
+                                .into())
+                            }
                         };
 
                         Some(block)
@@ -123,7 +188,14 @@ impl<'a> Parser<'a> {
                 let parameters = {
                     match lexer.next() {
                         Some(token) if token.kind == TokenKind::LPAREN => (),
-                        _ => return Err("Expected opening parenthesis".into()),
+                        Some(token) => {
+                            return Err(format!(
+                                "expected opening parenthesis, got {} at {}:{}",
+                                token.literal, token.span.line, token.span.column
+                            )
+                            .into())
+                        }
+                        None => return Err("expected opening parenthesis, got EOF".into()),
                     }
 
                     let mut parameters = Vec::new();
@@ -138,7 +210,14 @@ impl<'a> Parser<'a> {
                                 let value = token.literal.clone();
                                 parameters.push(IdentExpression { token, value });
                             }
-                            _ => return Err("Expected identifier".into()),
+                            Some(token) => {
+                                return Err(format!(
+                                    "expected identifier, got {} at {}:{}",
+                                    token.literal, token.span.line, token.span.column
+                                )
+                                .into())
+                            }
+                            None => return Err("expected identifier, got EOF".into()),
                         }
 
                         match lexer.peek() {
@@ -151,15 +230,42 @@ impl<'a> Parser<'a> {
 
                     match lexer.next() {
                         Some(token) if token.kind == TokenKind::RPAREN => (),
-                        _ => return Err("Expected closing parenthesis".into()),
+                        Some(token) => {
+                            return Err(format!(
+                                "expected closing parenthesis, got {} at {}:{}",
+                                token.literal, token.span.line, token.span.column
+                            )
+                            .into())
+                        }
+                        None => return Err("expected closing parenthesis, got EOF".into()),
                     }
 
                     parameters
                 };
 
                 let body = match Parser::parse_statement(lexer)? {
-                    Statement::Block(block) => block,
-                    _ => return Err("Expected block statement".into()),
+                    Statement::Block(expression) => expression,
+                    Statement::Let(expression) => {
+                        return Err(format!(
+                            "expected block statement, got let statement at {}:{}",
+                            expression.token.span.line, expression.token.span.column
+                        )
+                        .into())
+                    }
+                    Statement::Return(expression) => {
+                        return Err(format!(
+                            "expected block statement, got return statement at {}:{}",
+                            expression.token.span.line, expression.token.span.column
+                        )
+                        .into())
+                    }
+                    Statement::Expression(expression) => {
+                        return Err(format!(
+                            "expected block statement, got expression statement at {}:{}",
+                            expression.token.span.line, expression.token.span.column
+                        )
+                        .into())
+                    }
                 };
 
                 let function = Expression::FUNCTION(FunctionExpression {
@@ -175,7 +281,14 @@ impl<'a> Parser<'a> {
                         let arguments = {
                             match lexer.next() {
                                 Some(token) if token.kind == TokenKind::LPAREN => (),
-                                _ => return Err("Expected opening parenthesis".into()),
+                                Some(token) => {
+                                    return Err(format!(
+                                        "expected opening parenthesis, got {} at {}:{}",
+                                        token.literal, token.span.line, token.span.column
+                                    )
+                                    .into())
+                                }
+                                None => return Err("expected opening parenthesis, got EOF".into()),
                             }
 
                             let mut arguments = Vec::new();
@@ -198,7 +311,18 @@ impl<'a> Parser<'a> {
 
                             match lexer.next() {
                                 Some(token) if token.kind == TokenKind::RPAREN => (),
-                                _ => return Err("Expected closing parenthesis".into()),
+                                Some(token) => {
+                                    return Err(format!(
+                                        "expected closing parenthesis, got {} at {}:{}",
+                                        token.literal, token.span.line, token.span.column
+                                    )
+                                    .into())
+                                }
+                                None => {
+                                    return Err(
+                                        format!("expected closing parenthesis, got EOF").into()
+                                    )
+                                }
                             }
 
                             arguments
@@ -221,7 +345,14 @@ impl<'a> Parser<'a> {
                     right,
                 })
             }
-            _ => return Err("Expected expression".into()),
+            Some(token) => {
+                return Err(format!(
+                    "unexpected token {} at {}:{}",
+                    token.literal, token.span.line, token.span.column
+                )
+                .into())
+            }
+            None => return Err("expected a token".into()),
         };
 
         while let Some(next) = lexer.peek() {
@@ -247,7 +378,14 @@ impl<'a> Parser<'a> {
             Some(token) if token.kind == TokenKind::LBRACE => {
                 let token = match lexer.next() {
                     Some(token) if token.kind == TokenKind::LBRACE => token,
-                    _ => return Err("Expected opening brace".into()),
+                    Some(token) => {
+                        return Err(format!(
+                            "expected opening brace, got {} at {}:{}",
+                            token.literal, token.span.line, token.span.column
+                        )
+                        .into())
+                    }
+                    None => return Err("expected opening brace, got EOF".into()),
                 };
 
                 let mut statements = Vec::new();
@@ -262,7 +400,14 @@ impl<'a> Parser<'a> {
 
                 match lexer.next() {
                     Some(token) if token.kind == TokenKind::RBRACE => (),
-                    _ => return Err("Expected closing brace".into()),
+                    Some(token) => {
+                        return Err(format!(
+                            "expected closing brace, got {} at {}:{}",
+                            token.literal, token.span.line, token.span.column
+                        )
+                        .into())
+                    }
+                    None => return Err("expected closing brace, got EOF".into()),
                 }
 
                 Ok(Statement::Block(BlockStatement { token, statements }))
@@ -270,24 +415,52 @@ impl<'a> Parser<'a> {
             Some(token) if token.kind == TokenKind::LET => {
                 let token = match lexer.next() {
                     Some(token) if token.kind == TokenKind::LET => token,
-                    _ => return Err("Expected keyword let".into()),
+                    Some(token) => {
+                        return Err(format!(
+                            "expected keyword let, got {} at {}:{}",
+                            token.literal, token.span.line, token.span.column
+                        )
+                        .into())
+                    }
+                    None => return Err("expected keyword let, got EOF".into()),
                 };
 
                 let identifier = match lexer.next() {
                     Some(token) if token.kind == TokenKind::IDENT => token.literal,
-                    _ => return Err("Expected identifier".into()),
+                    Some(token) => {
+                        return Err(format!(
+                            "expected identifier, got {} at {}:{}",
+                            token.literal, token.span.line, token.span.column
+                        )
+                        .into())
+                    }
+                    None => return Err("expected identifier, got EOF".into()),
                 };
 
                 match lexer.next() {
                     Some(token) if token.kind == TokenKind::ASSIGN => (),
-                    _ => return Err("Expected assignment operator".into()),
+                    Some(token) => {
+                        return Err(format!(
+                            "expected assignment operator, got {} at {}:{}",
+                            token.literal, token.span.line, token.span.column
+                        )
+                        .into())
+                    }
+                    None => return Err("expected assignment operator, got EOF".into()),
                 }
 
                 let expression = Parser::parse_expression(lexer, Precedence::LOWEST)?;
 
                 match lexer.next() {
                     Some(token) if token.kind == TokenKind::SEMICOLON => (),
-                    _ => return Err("Expected semicolon".into()),
+                    Some(token) => {
+                        return Err(format!(
+                            "expected semicolon, got {} at {}:{}",
+                            token.literal, token.span.line, token.span.column
+                        )
+                        .into())
+                    }
+                    None => return Err("expected semicolon, got EOF".into()),
                 }
 
                 Ok(Statement::Let(LetStatement {
@@ -299,14 +472,28 @@ impl<'a> Parser<'a> {
             Some(token) if token.kind == TokenKind::RETURN => {
                 let token = match lexer.next() {
                     Some(token) if token.kind == TokenKind::RETURN => token,
-                    _ => return Err("Expected keyword return".into()),
+                    Some(token) => {
+                        return Err(format!(
+                            "expected keyword return, got {} at {}:{}",
+                            token.literal, token.span.line, token.span.column
+                        )
+                        .into())
+                    }
+                    None => return Err("expected keyword return, got EOF".into()),
                 };
 
                 let expression = Parser::parse_expression(lexer, Precedence::LOWEST)?;
 
                 match lexer.next() {
                     Some(token) if token.kind == TokenKind::SEMICOLON => (),
-                    _ => return Err("Expected semicolon".into()),
+                    Some(token) => {
+                        return Err(format!(
+                            "expected semicolon, got {} at {}:{}",
+                            token.literal, token.span.line, token.span.column
+                        )
+                        .into())
+                    }
+                    None => return Err("expected semicolon, got EOF".into()),
                 }
 
                 Ok(Statement::Return(ReturnStatement { token, expression }))
@@ -314,7 +501,7 @@ impl<'a> Parser<'a> {
             _ => {
                 let token = match lexer.peek() {
                     Some(token) => token,
-                    _ => return Err("Expected a token".into()),
+                    None => return Err("expected a token".into()),
                 }
                 .clone();
 
@@ -322,7 +509,14 @@ impl<'a> Parser<'a> {
 
                 match lexer.next() {
                     Some(token) if token.kind == TokenKind::SEMICOLON => (),
-                    _ => return Err("Expected semicolon".into()),
+                    Some(token) => {
+                        return Err(format!(
+                            "expected semicolon, got {} at {}:{}",
+                            token.literal, token.span.line, token.span.column
+                        )
+                        .into())
+                    }
+                    None => return Err("expected semicolon, got EOF".into()),
                 }
 
                 Ok(Statement::Expression(ExpressionStatement {
@@ -343,7 +537,7 @@ impl<'a> Parser<'a> {
 
             if token.kind == TokenKind::ILLEGAL {
                 return Err(format!(
-                    "\"{}\" at {}:{} is an illegal token",
+                    "illegal token {} at {}:{}",
                     token.literal, token.span.line, token.span.column
                 )
                 .into());
