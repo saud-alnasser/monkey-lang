@@ -34,10 +34,21 @@ impl<'a> Parser<'a> {
 
                 Expression::BOOLEAN { token, value }
             }
+            Some(token) if token.kind == TokenKind::LPAREN => {
+                lexer.next().unwrap();
+
+                let expression = Parser::parse_expression(lexer, Precedence::LOWEST)?;
+
+                match lexer.next() {
+                    Some(token) if token.kind == TokenKind::RPAREN => (),
+                    _ => return Err("Expected closing parenthesis".into()),
+                }
+
+                expression
+            }
             Some(token) if token.kind == TokenKind::MINUS || token.kind == TokenKind::BANG => {
                 let operator = lexer.next().unwrap();
                 let right = Box::new(Parser::parse_expression(lexer, Precedence::PREFIX)?);
-
                 Expression::PREFIX { operator, right }
             }
             _ => return Err("Expected expression".into()),
@@ -424,11 +435,11 @@ mod tests {
                 "((3 + (4 * 5)) == ((3 * 1) + (4 * 5)));",
             ),
             // grouping
-            // ("1 + (2 + 3) + 4;", "((1 + (2 + 3)) + 4);"),
-            // ("(5 + 5) * 2;", "((5 + 5) * 2);"),
-            // ("2 / (5 + 5);", "(2 / (5 + 5));"),
-            // ("-(5 + 5);", "(-(5 + 5));"),
-            // ("!(true == true);", "(!(true == true));"),
+            ("1 + (2 + 3) + 4;", "((1 + (2 + 3)) + 4);"),
+            ("(5 + 5) * 2;", "((5 + 5) * 2);"),
+            ("2 / (5 + 5);", "(2 / (5 + 5));"),
+            ("-(5 + 5);", "(-(5 + 5));"),
+            ("!(true == true);", "(!(true == true));"),
         ];
 
         for (input, expected) in tests.iter() {
