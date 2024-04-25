@@ -77,12 +77,38 @@ impl Evaluator {
 
                 DataType::NULL
             }
+            Expression::IF(expression) => {
+                let condition = Evaluator::eval_expression(*expression.condition);
+
+                let is_truthy = match condition {
+                    DataType::BOOLEAN(value) => value,
+                    DataType::INT(value) => value != 0,
+                    DataType::NULL => false,
+                };
+
+                if is_truthy {
+                    return Evaluator::eval(Statement::Block(expression.consequence));
+                } else if expression.alternative.is_some() {
+                    return Evaluator::eval(Statement::Block(expression.alternative.unwrap()));
+                } else {
+                    return DataType::NULL;
+                }
+            }
             _ => DataType::NULL,
         }
     }
 
     pub fn eval(statement: Statement) -> DataType {
         match statement {
+            Statement::Block(statement) => {
+                let mut result = DataType::NULL;
+
+                for statement in statement.statements {
+                    result = Evaluator::eval(statement);
+                }
+
+                result
+            }
             Statement::Expression(statement) => Evaluator::eval_expression(statement.expression),
             _ => DataType::NULL,
         }
@@ -130,7 +156,7 @@ mod tests {
     }
 
     #[test]
-    fn test_eval_boolean_expression() {
+    fn test_eval_boolean_expressions() {
         let tests = vec![
             ("true;", true),
             ("false;", false),
@@ -178,6 +204,33 @@ mod tests {
                 match Evaluator::eval(statement) {
                     DataType::BOOLEAN(value) => assert_eq!(value, expected),
                     _ => panic!("expected a boolean, got something else"),
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_eval_if_else_expressions() {
+        let tests = vec![
+            ("if (true) { 10; };", 10),
+            ("if (false) { 10; };", 0),
+            ("if (1) { 10; };", 10),
+            ("if (1 < 2) { 10; };", 10),
+            ("if (1 > 2) { 10; };", 0),
+            ("if (1 > 2) { 10; } else { 20; };", 20),
+            ("if (1 < 2) { 10; } else { 20; };", 10),
+        ];
+
+        for (input, expected) in tests {
+            let lexer = Lexer::new(input);
+            let mut parser = Parser::new(lexer);
+            let program = parser.parse().unwrap();
+
+            for statement in program.statements {
+                match Evaluator::eval(statement) {
+                    DataType::INT(value) => assert_eq!(value, expected),
+                    DataType::NULL => assert_eq!(expected, 0),
+                    _ => panic!("expected an integer, got something else"),
                 }
             }
         }
