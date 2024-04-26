@@ -1,9 +1,22 @@
+use std::fmt::Display;
+
 use crate::{Expression, ExpressionStatement, IntExpression, Statement};
 
+#[derive(Debug, PartialEq)]
 pub enum DataType {
     INT(i64),
     BOOLEAN(bool),
     NULL,
+}
+
+impl Display for DataType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            DataType::INT(value) => write!(f, "{}", value),
+            DataType::BOOLEAN(value) => write!(f, "{}", value),
+            DataType::NULL => write!(f, "null"),
+        }
+    }
 }
 
 pub struct Evaluator;
