@@ -3,7 +3,7 @@ use std::{
     io::{self, Write},
 };
 
-use crate::{DataType, Evaluator, Lexer, Parser};
+use crate::{DataType, Environment, Evaluator, Lexer, Parser};
 
 static MONKEY_FACE: &str = r#"            
             __,__
@@ -22,15 +22,15 @@ static MONKEY_FACE: &str = r#"
 pub struct REPL;
 
 impl REPL {
-    fn eval(input: &str) -> Result<DataType, Box<dyn Error>> {
-        let lexer = Lexer::new(input);
+    fn eval(code: &str, env: &mut Environment) -> Result<DataType, Box<dyn Error>> {
+        let lexer = Lexer::new(code);
         let mut parser = Parser::new(lexer);
         let program = parser.parse()?;
 
         let mut output = DataType::NULL;
 
         for statement in program.statements {
-            output = Evaluator::eval(statement)?;
+            output = Evaluator::eval(statement, env)?;
 
             if let DataType::RETURN(_) = output {
                 break;
@@ -45,17 +45,19 @@ impl REPL {
         println!("Welcome to the Monkey programming language REPL!");
         println!("Feel free to type in commands");
 
-        let mut input = String::new();
+        let mut code = String::new();
+        let mut env = Environment::new();
 
         loop {
             print!(">> ");
             io::stdout().flush().unwrap();
-            io::stdin().read_line(&mut input).unwrap();
+            io::stdin().read_line(&mut code).unwrap();
 
-            match REPL::eval(&input) {
-                Ok(data) => {
-                    println!("{}", data);
-                }
+            match REPL::eval(&code, &mut env) {
+                Ok(data) => match data {
+                    DataType::NULL => (),
+                    _ => println!("{}", data),
+                },
                 Err(error) => {
                     eprintln!("{}", MONKEY_FACE);
                     eprintln!("Woops! We ran into some monkey business here!");
@@ -63,7 +65,7 @@ impl REPL {
                 }
             }
 
-            input.clear();
+            code.clear();
         }
     }
 }
