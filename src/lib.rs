@@ -6,7 +6,7 @@ mod repl;
 mod utils;
 
 pub use ast::*;
-pub use evaluator::Evaluator;
-pub use lexer::Lexer;
-pub use parser::Parser;
-pub use repl::REPL;
+pub use evaluator::*;
+pub use lexer::*;
+pub use parser::*;
+pub use repl::*;

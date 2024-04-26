@@ -1,11 +1,146 @@
-use std::error::Error;
+use std::{error::Error, fmt::Display};
 
 use crate::{
     BlockStatement, BooleanExpression, CallExpression, Expression, ExpressionStatement,
     FunctionExpression, IdentExpression, IfExpression, InfixExpression, IntExpression,
-    LetStatement, Lexer, Precedence, PrefixExpression, Program, ReturnStatement, Statement,
+    LetStatement, Lexer, Precedence, PrefixExpression, Program, ReturnStatement, Statement, Token,
     TokenKind,
 };
+
+#[derive(Debug)]
+pub enum ParseError {
+    MissingToken,
+    MissingOpeningParenthesis(Option<Token>),
+    MissingClosingParenthesis(Option<Token>),
+    MissingOpeningBrace(Option<Token>),
+    MissingClosingBrace(Option<Token>),
+    MissingLetKeyword(Option<Token>),
+    MissingAssignmentOperator(Option<Token>),
+    MissingReturnKeyword(Option<Token>),
+    MissingSemicolon(Option<Token>),
+    MissingIdentifier(Option<Token>),
+    MissingBlockStatement(Option<Token>),
+    UnexpectedToken(Token),
+    IllegalToken(Token),
+}
+
+impl Error for ParseError {
+    fn description(&self) -> &str {
+        match self {
+            ParseError::MissingToken => "missing a token",
+            ParseError::MissingOpeningParenthesis(_) => "missing opening parenthesis",
+            ParseError::MissingClosingParenthesis(_) => "missing closing parenthesis",
+            ParseError::MissingOpeningBrace(_) => "missing opening brace",
+            ParseError::MissingClosingBrace(_) => "missing closing brace",
+            ParseError::MissingLetKeyword(_) => "missing let keyword",
+            ParseError::MissingAssignmentOperator(_) => "missing assignment operator",
+            ParseError::MissingReturnKeyword(_) => "missing return keyword",
+            ParseError::MissingSemicolon(_) => "missing semicolon",
+            ParseError::MissingIdentifier(_) => "missing identifier",
+            ParseError::MissingBlockStatement(_) => "expected block statement",
+            ParseError::UnexpectedToken(_) => "unexpected token",
+            ParseError::IllegalToken(_) => "illegal token",
+        }
+    }
+}
+
+impl Display for ParseError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ParseError::MissingToken => write!(f, "missing a token"),
+            ParseError::MissingOpeningParenthesis(token) => match token {
+                Some(token) => write!(
+                    f,
+                    "expected opening parenthesis, got {} at {}:{}",
+                    token.literal, token.span.line, token.span.column
+                ),
+                None => write!(f, "expected opening parenthesis, got EOF"),
+            },
+            ParseError::MissingClosingParenthesis(token) => match token {
+                Some(token) => write!(
+                    f,
+                    "expected closing parenthesis, got {} at {}:{}",
+                    token.literal, token.span.line, token.span.column
+                ),
+                None => write!(f, "expected closing parenthesis, got EOF"),
+            },
+            ParseError::MissingOpeningBrace(token) => match token {
+                Some(token) => write!(
+                    f,
+                    "expected opening brace, got {} at {}:{}",
+                    token.literal, token.span.line, token.span.column
+                ),
+                None => write!(f, "expected opening brace, got EOF"),
+            },
+            ParseError::MissingClosingBrace(token) => match token {
+                Some(token) => write!(
+                    f,
+                    "expected closing brace, got {} at {}:{}",
+                    token.literal, token.span.line, token.span.column
+                ),
+                None => write!(f, "expected closing brace, got EOF"),
+            },
+            ParseError::MissingLetKeyword(token) => match token {
+                Some(token) => write!(
+                    f,
+                    "expected let keyword, got {} at {}:{}",
+                    token.literal, token.span.line, token.span.column
+                ),
+                None => write!(f, "expected let keyword, got EOF"),
+            },
+            ParseError::MissingAssignmentOperator(token) => match token {
+                Some(token) => write!(
+                    f,
+                    "expected assignment operator, got {} at {}:{}",
+                    token.literal, token.span.line, token.span.column
+                ),
+                None => write!(f, "expected assignment operator, got EOF"),
+            },
+            ParseError::MissingReturnKeyword(token) => match token {
+                Some(token) => write!(
+                    f,
+                    "expected return keyword, got {} at {}:{}",
+                    token.literal, token.span.line, token.span.column
+                ),
+                None => write!(f, "expected return keyword, got EOF"),
+            },
+            ParseError::MissingSemicolon(token) => match token {
+                Some(token) => write!(
+                    f,
+                    "expected semicolon, got {} at {}:{}",
+                    token.literal, token.span.line, token.span.column
+                ),
+                None => write!(f, "expected semicolon, got EOF"),
+            },
+            ParseError::MissingIdentifier(token) => match token {
+                Some(token) => write!(
+                    f,
+                    "expected identifier, got {} at {}:{}",
+                    token.literal, token.span.line, token.span.column
+                ),
+                None => write!(f, "expected identifier, got EOF"),
+            },
+            ParseError::MissingBlockStatement(token) => match token {
+                Some(token) => write!(
+                    f,
+                    "expected block statement, got {} at {}:{}",
+                    token.literal, token.span.line, token.span.column
+                ),
+                None => write!(f, "expected block statement, got EOF"),
+            },
+            ParseError::UnexpectedToken(token) => write!(
+                f,
+                "unexpected token {} at {}:{}",
+                token.literal, token.span.line, token.span.column
+            ),
+            ParseError::IllegalToken(token) => write!(
+                f,
+                "illegal token {} at {}:{}",
+                token.literal, token.span.line, token.span.column
+            ),
+        }
+    }
+}
 
 pub struct Parser<'a> {
     lexer: Lexer<'a>,
@@ -27,13 +162,9 @@ impl<'a> Parser<'a> {
                 match lexer.next() {
                     Some(token) if token.kind == TokenKind::RPAREN => (),
                     Some(token) => {
-                        return Err(format!(
-                            "expected closing parenthesis, got {} at {}:{}",
-                            token.literal, token.span.line, token.span.column
-                        )
-                        .into())
+                        return Err(Box::new(ParseError::MissingClosingParenthesis(Some(token))))
                     }
-                    None => return Err(format!("expected closing parenthesis, got EOF").into()),
+                    None => return Err(Box::new(ParseError::MissingClosingParenthesis(None))),
                 }
 
                 expression
@@ -52,13 +183,15 @@ impl<'a> Parser<'a> {
                             match lexer.next() {
                                 Some(token) if token.kind == TokenKind::LPAREN => (),
                                 Some(token) => {
-                                    return Err(format!(
-                                        "expected opening parenthesis, got {} at {}:{}",
-                                        token.literal, token.span.line, token.span.column
-                                    )
-                                    .into())
+                                    return Err(Box::new(ParseError::MissingOpeningParenthesis(
+                                        Some(token),
+                                    )))
                                 }
-                                None => return Err("expected opening parenthesis, got EOF".into()),
+                                None => {
+                                    return Err(Box::new(ParseError::MissingOpeningParenthesis(
+                                        None,
+                                    )))
+                                }
                             }
 
                             let mut arguments = Vec::new();
@@ -82,16 +215,14 @@ impl<'a> Parser<'a> {
                             match lexer.next() {
                                 Some(token) if token.kind == TokenKind::RPAREN => (),
                                 Some(token) => {
-                                    return Err(format!(
-                                        "expected closing parenthesis, got {} at {}:{}",
-                                        token.literal, token.span.line, token.span.column
-                                    )
-                                    .into())
+                                    return Err(Box::new(ParseError::MissingClosingParenthesis(
+                                        Some(token),
+                                    )))
                                 }
                                 None => {
-                                    return Err(
-                                        format!("expected closing parenthesis, got EOF").into()
-                                    )
+                                    return Err(Box::new(ParseError::MissingClosingParenthesis(
+                                        None,
+                                    )))
                                 }
                             }
 
@@ -121,25 +252,19 @@ impl<'a> Parser<'a> {
                 let consequence = match Parser::parse_statement(lexer)? {
                     Statement::Block(expression) => expression,
                     Statement::Let(expression) => {
-                        return Err(format!(
-                            "expected block statement, got let statement at {}:{}",
-                            expression.token.span.line, expression.token.span.column
-                        )
-                        .into())
+                        return Err(Box::new(ParseError::MissingBlockStatement(Some(
+                            expression.token,
+                        ))))
                     }
                     Statement::Return(expression) => {
-                        return Err(format!(
-                            "expected block statement, got return statement at {}:{}",
-                            expression.token.span.line, expression.token.span.column
-                        )
-                        .into())
+                        return Err(Box::new(ParseError::MissingBlockStatement(Some(
+                            expression.token,
+                        ))))
                     }
                     Statement::Expression(expression) => {
-                        return Err(format!(
-                            "expected block statement, got expression statement at {}:{}",
-                            expression.token.span.line, expression.token.span.column
-                        )
-                        .into())
+                        return Err(Box::new(ParseError::MissingBlockStatement(Some(
+                            expression.token,
+                        ))))
                     }
                 };
 
@@ -150,25 +275,19 @@ impl<'a> Parser<'a> {
                         let block = match Parser::parse_statement(lexer)? {
                             Statement::Block(expression) => expression,
                             Statement::Let(expression) => {
-                                return Err(format!(
-                                    "expected block statement, got let statement at {}:{}",
-                                    expression.token.span.line, expression.token.span.column
-                                )
-                                .into())
+                                return Err(Box::new(ParseError::MissingBlockStatement(Some(
+                                    expression.token,
+                                ))))
                             }
                             Statement::Return(expression) => {
-                                return Err(format!(
-                                    "expected block statement, got return statement at {}:{}",
-                                    expression.token.span.line, expression.token.span.column
-                                )
-                                .into())
+                                return Err(Box::new(ParseError::MissingBlockStatement(Some(
+                                    expression.token,
+                                ))))
                             }
                             Statement::Expression(expression) => {
-                                return Err(format!(
-                                    "expected block statement, got expression statement at {}:{}",
-                                    expression.token.span.line, expression.token.span.column
-                                )
-                                .into())
+                                return Err(Box::new(ParseError::MissingBlockStatement(Some(
+                                    expression.token,
+                                ))))
                             }
                         };
 
@@ -189,13 +308,11 @@ impl<'a> Parser<'a> {
                     match lexer.next() {
                         Some(token) if token.kind == TokenKind::LPAREN => (),
                         Some(token) => {
-                            return Err(format!(
-                                "expected opening parenthesis, got {} at {}:{}",
-                                token.literal, token.span.line, token.span.column
-                            )
-                            .into())
+                            return Err(Box::new(ParseError::MissingOpeningParenthesis(Some(
+                                token,
+                            ))))
                         }
-                        None => return Err("expected opening parenthesis, got EOF".into()),
+                        None => return Err(Box::new(ParseError::MissingOpeningParenthesis(None))),
                     }
 
                     let mut parameters = Vec::new();
@@ -211,13 +328,9 @@ impl<'a> Parser<'a> {
                                 parameters.push(IdentExpression { token, value });
                             }
                             Some(token) => {
-                                return Err(format!(
-                                    "expected identifier, got {} at {}:{}",
-                                    token.literal, token.span.line, token.span.column
-                                )
-                                .into())
+                                return Err(Box::new(ParseError::MissingIdentifier(Some(token))))
                             }
-                            None => return Err("expected identifier, got EOF".into()),
+                            None => return Err(Box::new(ParseError::MissingIdentifier(None))),
                         }
 
                         match lexer.peek() {
@@ -231,13 +344,11 @@ impl<'a> Parser<'a> {
                     match lexer.next() {
                         Some(token) if token.kind == TokenKind::RPAREN => (),
                         Some(token) => {
-                            return Err(format!(
-                                "expected closing parenthesis, got {} at {}:{}",
-                                token.literal, token.span.line, token.span.column
-                            )
-                            .into())
+                            return Err(Box::new(ParseError::MissingClosingParenthesis(Some(
+                                token,
+                            ))))
                         }
-                        None => return Err("expected closing parenthesis, got EOF".into()),
+                        None => return Err(Box::new(ParseError::MissingClosingParenthesis(None))),
                     }
 
                     parameters
@@ -246,25 +357,19 @@ impl<'a> Parser<'a> {
                 let body = match Parser::parse_statement(lexer)? {
                     Statement::Block(expression) => expression,
                     Statement::Let(expression) => {
-                        return Err(format!(
-                            "expected block statement, got let statement at {}:{}",
-                            expression.token.span.line, expression.token.span.column
-                        )
-                        .into())
+                        return Err(Box::new(ParseError::MissingBlockStatement(Some(
+                            expression.token,
+                        ))))
                     }
                     Statement::Return(expression) => {
-                        return Err(format!(
-                            "expected block statement, got return statement at {}:{}",
-                            expression.token.span.line, expression.token.span.column
-                        )
-                        .into())
+                        return Err(Box::new(ParseError::MissingBlockStatement(Some(
+                            expression.token,
+                        ))))
                     }
                     Statement::Expression(expression) => {
-                        return Err(format!(
-                            "expected block statement, got expression statement at {}:{}",
-                            expression.token.span.line, expression.token.span.column
-                        )
-                        .into())
+                        return Err(Box::new(ParseError::MissingBlockStatement(Some(
+                            expression.token,
+                        ))))
                     }
                 };
 
@@ -282,13 +387,15 @@ impl<'a> Parser<'a> {
                             match lexer.next() {
                                 Some(token) if token.kind == TokenKind::LPAREN => (),
                                 Some(token) => {
-                                    return Err(format!(
-                                        "expected opening parenthesis, got {} at {}:{}",
-                                        token.literal, token.span.line, token.span.column
-                                    )
-                                    .into())
+                                    return Err(Box::new(ParseError::MissingOpeningParenthesis(
+                                        Some(token),
+                                    )))
                                 }
-                                None => return Err("expected opening parenthesis, got EOF".into()),
+                                None => {
+                                    return Err(Box::new(ParseError::MissingOpeningParenthesis(
+                                        None,
+                                    )))
+                                }
                             }
 
                             let mut arguments = Vec::new();
@@ -312,16 +419,14 @@ impl<'a> Parser<'a> {
                             match lexer.next() {
                                 Some(token) if token.kind == TokenKind::RPAREN => (),
                                 Some(token) => {
-                                    return Err(format!(
-                                        "expected closing parenthesis, got {} at {}:{}",
-                                        token.literal, token.span.line, token.span.column
-                                    )
-                                    .into())
+                                    return Err(Box::new(ParseError::MissingClosingParenthesis(
+                                        Some(token),
+                                    )))
                                 }
                                 None => {
-                                    return Err(
-                                        format!("expected closing parenthesis, got EOF").into()
-                                    )
+                                    return Err(Box::new(ParseError::MissingClosingParenthesis(
+                                        None,
+                                    )))
                                 }
                             }
 
@@ -345,14 +450,8 @@ impl<'a> Parser<'a> {
                     right,
                 })
             }
-            Some(token) => {
-                return Err(format!(
-                    "unexpected token {} at {}:{}",
-                    token.literal, token.span.line, token.span.column
-                )
-                .into())
-            }
-            None => return Err("expected a token".into()),
+            Some(token) => return Err(Box::new(ParseError::UnexpectedToken(token))),
+            None => return Err(Box::new(ParseError::MissingToken)),
         };
 
         while let Some(next) = lexer.peek() {
@@ -379,13 +478,9 @@ impl<'a> Parser<'a> {
                 let token = match lexer.next() {
                     Some(token) if token.kind == TokenKind::LBRACE => token,
                     Some(token) => {
-                        return Err(format!(
-                            "expected opening brace, got {} at {}:{}",
-                            token.literal, token.span.line, token.span.column
-                        )
-                        .into())
+                        return Err(Box::new(ParseError::MissingOpeningBrace(Some(token))))
                     }
-                    None => return Err("expected opening brace, got EOF".into()),
+                    None => return Err(Box::new(ParseError::MissingOpeningBrace(None))),
                 };
 
                 let mut statements = Vec::new();
@@ -401,13 +496,9 @@ impl<'a> Parser<'a> {
                 match lexer.next() {
                     Some(token) if token.kind == TokenKind::RBRACE => (),
                     Some(token) => {
-                        return Err(format!(
-                            "expected closing brace, got {} at {}:{}",
-                            token.literal, token.span.line, token.span.column
-                        )
-                        .into())
+                        return Err(Box::new(ParseError::MissingClosingBrace(Some(token))))
                     }
-                    None => return Err("expected closing brace, got EOF".into()),
+                    None => return Err(Box::new(ParseError::MissingClosingBrace(None))),
                 }
 
                 Ok(Statement::Block(BlockStatement { token, statements }))
@@ -416,51 +507,33 @@ impl<'a> Parser<'a> {
                 let token = match lexer.next() {
                     Some(token) if token.kind == TokenKind::LET => token,
                     Some(token) => {
-                        return Err(format!(
-                            "expected keyword let, got {} at {}:{}",
-                            token.literal, token.span.line, token.span.column
-                        )
-                        .into())
+                        return Err(Box::new(ParseError::MissingLetKeyword(Some(token))))
                     }
-                    None => return Err("expected keyword let, got EOF".into()),
+                    None => return Err(Box::new(ParseError::MissingLetKeyword(None))),
                 };
 
                 let identifier = match lexer.next() {
                     Some(token) if token.kind == TokenKind::IDENT => token.literal,
                     Some(token) => {
-                        return Err(format!(
-                            "expected identifier, got {} at {}:{}",
-                            token.literal, token.span.line, token.span.column
-                        )
-                        .into())
+                        return Err(Box::new(ParseError::MissingIdentifier(Some(token))))
                     }
-                    None => return Err("expected identifier, got EOF".into()),
+                    None => return Err(Box::new(ParseError::MissingIdentifier(None))),
                 };
 
                 match lexer.next() {
                     Some(token) if token.kind == TokenKind::ASSIGN => (),
                     Some(token) => {
-                        return Err(format!(
-                            "expected assignment operator, got {} at {}:{}",
-                            token.literal, token.span.line, token.span.column
-                        )
-                        .into())
+                        return Err(Box::new(ParseError::MissingAssignmentOperator(Some(token))))
                     }
-                    None => return Err("expected assignment operator, got EOF".into()),
+                    None => return Err(Box::new(ParseError::MissingAssignmentOperator(None))),
                 }
 
                 let expression = Parser::parse_expression(lexer, Precedence::LOWEST)?;
 
                 match lexer.next() {
                     Some(token) if token.kind == TokenKind::SEMICOLON => (),
-                    Some(token) => {
-                        return Err(format!(
-                            "expected semicolon, got {} at {}:{}",
-                            token.literal, token.span.line, token.span.column
-                        )
-                        .into())
-                    }
-                    None => return Err("expected semicolon, got EOF".into()),
+                    Some(token) => return Err(Box::new(ParseError::MissingSemicolon(Some(token)))),
+                    None => return Err(Box::new(ParseError::MissingSemicolon(None))),
                 }
 
                 Ok(Statement::Let(LetStatement {
@@ -473,27 +546,17 @@ impl<'a> Parser<'a> {
                 let token = match lexer.next() {
                     Some(token) if token.kind == TokenKind::RETURN => token,
                     Some(token) => {
-                        return Err(format!(
-                            "expected keyword return, got {} at {}:{}",
-                            token.literal, token.span.line, token.span.column
-                        )
-                        .into())
+                        return Err(Box::new(ParseError::MissingReturnKeyword(Some(token))))
                     }
-                    None => return Err("expected keyword return, got EOF".into()),
+                    None => return Err(Box::new(ParseError::MissingReturnKeyword(None))),
                 };
 
                 let expression = Parser::parse_expression(lexer, Precedence::LOWEST)?;
 
                 match lexer.next() {
                     Some(token) if token.kind == TokenKind::SEMICOLON => (),
-                    Some(token) => {
-                        return Err(format!(
-                            "expected semicolon, got {} at {}:{}",
-                            token.literal, token.span.line, token.span.column
-                        )
-                        .into())
-                    }
-                    None => return Err("expected semicolon, got EOF".into()),
+                    Some(token) => return Err(Box::new(ParseError::MissingSemicolon(Some(token)))),
+                    None => return Err(Box::new(ParseError::MissingSemicolon(None))),
                 }
 
                 Ok(Statement::Return(ReturnStatement { token, expression }))
@@ -501,7 +564,7 @@ impl<'a> Parser<'a> {
             _ => {
                 let token = match lexer.peek() {
                     Some(token) => token,
-                    None => return Err("expected a token".into()),
+                    None => return Err(Box::new(ParseError::MissingToken)),
                 }
                 .clone();
 
@@ -509,14 +572,8 @@ impl<'a> Parser<'a> {
 
                 match lexer.next() {
                     Some(token) if token.kind == TokenKind::SEMICOLON => (),
-                    Some(token) => {
-                        return Err(format!(
-                            "expected semicolon, got {} at {}:{}",
-                            token.literal, token.span.line, token.span.column
-                        )
-                        .into())
-                    }
-                    None => return Err("expected semicolon, got EOF".into()),
+                    Some(token) => return Err(Box::new(ParseError::MissingSemicolon(Some(token)))),
+                    None => return Err(Box::new(ParseError::MissingSemicolon(None))),
                 }
 
                 Ok(Statement::Expression(ExpressionStatement {
@@ -536,11 +593,7 @@ impl<'a> Parser<'a> {
             }
 
             if token.kind == TokenKind::ILLEGAL {
-                return Err(format!(
-                    "illegal token {} at {}:{}",
-                    token.literal, token.span.line, token.span.column
-                )
-                .into());
+                return Err(Box::new(ParseError::IllegalToken(token.clone())));
             }
 
             program
