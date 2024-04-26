@@ -1,3 +1,25 @@
+## 0.0.6 (2024-04-26)
+
+### Features
+
+#### create a baseline for the evaluator (#44)
+
+#### use evaluator in the repl (#45)
+
+#### extend the evaluator to eval boolean literals (#46)
+
+#### eval prefix expressions (#47)
+
+#### eval infix expressions (#48)
+
+#### eval lte and gte ops (#49)
+
+#### eval if else expressions (#50)
+
+#### eval return statements (#51)
+
+#### use better error handling (#52)
+
 ## 0.0.5 (2024-04-24)
 
 ### Features
