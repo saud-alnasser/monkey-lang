@@ -59,6 +59,8 @@ impl Evaluator {
                         TokenKind::SLASH => return DataType::INT(left / right),
                         TokenKind::LT => return DataType::BOOLEAN(left < right),
                         TokenKind::GT => return DataType::BOOLEAN(left > right),
+                        TokenKind::LTE => return DataType::BOOLEAN(left <= right),
+                        TokenKind::GTE => return DataType::BOOLEAN(left >= right),
                         TokenKind::EQ => return DataType::BOOLEAN(left == right),
                         TokenKind::NEQ => return DataType::BOOLEAN(left != right),
                         _ => (),
@@ -144,6 +146,10 @@ mod tests {
             ("1 > 2;", false),
             ("1 < 1;", false),
             ("1 > 1;", false),
+            ("1 <= 2;", true),
+            ("1 >= 2;", false),
+            ("1 <= 1;", true),
+            ("1 >= 1;", true),
             ("1 == 1;", true),
             ("1 != 1;", false),
             ("1 == 2;", false),
@@ -157,6 +163,10 @@ mod tests {
             ("(1 < 2) == false;", false),
             ("(1 > 2) == true;", false),
             ("(1 > 2) == false;", true),
+            ("1 >= 2 == true;", false),
+            ("1 >= 2 == false;", true),
+            ("1 <= 1 == true;", true),
+            ("1 <= 1 == false;", false),
         ];
 
         for (input, expected) in tests {
