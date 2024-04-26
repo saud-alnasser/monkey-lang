@@ -1,6 +1,6 @@
 use std::io::{self, Write};
 
-use crate::{Evaluator, Lexer, Parser};
+use crate::{evaluator::DataType, Evaluator, Lexer, Parser};
 
 static MONKEY_FACE: &str = r#"            
             __,__
@@ -32,9 +32,17 @@ impl REPL {
 
             match parser.parse() {
                 Ok(program) => {
+                    let mut output = DataType::NULL;
+
                     for statement in program.statements {
-                        println!("{}", Evaluator::eval(statement))
+                        output = Evaluator::eval(statement);
+
+                        if let DataType::RETURN(_) = output {
+                            break;
+                        }
                     }
+
+                    println!("{}", output);
                 }
                 Err(error) => {
                     eprintln!("{}", MONKEY_FACE);

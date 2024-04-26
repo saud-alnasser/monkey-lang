@@ -6,6 +6,7 @@ use crate::{Expression, Statement, TokenKind};
 pub enum DataType {
     INT(i64),
     BOOLEAN(bool),
+    RETURN(Box<DataType>),
     NULL,
 }
 
@@ -14,10 +15,14 @@ impl Display for DataType {
         match self {
             DataType::INT(value) => write!(f, "{}", value),
             DataType::BOOLEAN(value) => write!(f, "{}", value),
+            DataType::RETURN(value) => write!(f, "{}", value),
             DataType::NULL => write!(f, "null"),
         }
     }
 }
+
+#[derive(Debug)]
+pub enum EvaluationError {}
 
 pub struct Evaluator;
 
@@ -83,7 +88,7 @@ impl Evaluator {
                 let is_truthy = match condition {
                     DataType::BOOLEAN(value) => value,
                     DataType::INT(value) => value != 0,
-                    DataType::NULL => false,
+                    _ => false,
                 };
 
                 if is_truthy {
@@ -105,9 +110,16 @@ impl Evaluator {
 
                 for statement in statement.statements {
                     result = Evaluator::eval(statement);
+
+                    if let DataType::RETURN(_) = result {
+                        return result;
+                    }
                 }
 
                 result
+            }
+            Statement::Return(statement) => {
+                DataType::RETURN(Box::new(Evaluator::eval_expression(statement.expression)))
             }
             Statement::Expression(statement) => Evaluator::eval_expression(statement.expression),
             _ => DataType::NULL,
@@ -234,5 +246,67 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn test_eval_return_statements() {
+        let tests = vec![
+            ("return 10;", 10),
+            ("return 10; 9;", 10),
+            ("return 2 * 5; 9;", 10),
+            ("9; return 2 * 5; 9;", 10),
+            (
+                "if (10 > 1) {
+                    if (10 > 1) {
+                        return 10;
+                    };
+
+                    return 1;
+                };",
+                10,
+            ),
+        ];
+
+        for (input, expected) in tests {
+            let lexer = Lexer::new(input);
+            let mut parser = Parser::new(lexer);
+            let program = parser.parse().unwrap();
+
+            for statement in program.statements {
+                if let DataType::RETURN(value) = Evaluator::eval(statement) {
+                    match *value {
+                        DataType::INT(value) => assert_eq!(value, expected),
+                        _ => panic!("expected an integer, got something else"),
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_eval_error_handling() {
+        let tests = vec![
+            ("5 + true;", "type mismatch: INTEGER + BOOLEAN"),
+            ("5 + true; 5;", "type mismatch: INTEGER + BOOLEAN"),
+            ("-true;", "unknown operator: -BOOLEAN"),
+            ("true + false;", "unknown operator: BOOLEAN + BOOLEAN"),
+            ("5; true + false; 5;", "unknown operator: BOOLEAN + BOOLEAN"),
+            (
+                "if (10 > 1) { true + false; };",
+                "unknown operator: BOOLEAN + BOOLEAN",
+            ),
+            (
+                "
+                if (10 > 1) {
+                    if (10 > 1) {
+                        return true + false;
+                    };
+
+                    return 1;
+                };
+                ",
+                "unknown operator: BOOLEAN + BOOLEAN",
+            ),
+        ];
     }
 }
