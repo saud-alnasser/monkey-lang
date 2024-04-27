@@ -606,4 +606,22 @@ mod tests {
             }
         }
     }
+
+    #[test]
+    fn test_eval_closures() {
+        let input =
+            "let new_adder = fn(x) { fn(y) { x + y; }; }; let add_two = new_adder(2); add_two(2);";
+
+        let lexer = Lexer::new(input);
+        let mut parser = Parser::new(lexer);
+        let program = parser.parse().unwrap();
+
+        let env = Rc::new(RefCell::new(Environment::new(None)));
+
+        for statement in program.statements {
+            if let Ok(DataType::INT(value)) = Evaluator::eval(statement, Rc::clone(&env)) {
+                assert_eq!(value, 4);
+            }
+        }
+    }
 }
