@@ -1,12 +1,13 @@
 use std::{error::Error, fmt::Display};
 
-use crate::{Expression, Statement, Token, TokenKind};
+use crate::{Environment, Expression, Statement, Token, TokenKind};
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum DataType {
     INT(i64),
     BOOLEAN(bool),
     RETURN(Box<DataType>),
+    IDENT(Box<str>),
     NULL,
 }
 
@@ -16,7 +17,8 @@ impl Display for DataType {
             DataType::INT(value) => write!(f, "{}", value),
             DataType::BOOLEAN(value) => write!(f, "{}", value),
             DataType::RETURN(value) => write!(f, "{}", value),
-            DataType::NULL => write!(f, "null"),
+            DataType::IDENT(value) => write!(f, "{}", value),
+            DataType::NULL => write!(f, ""),
         }
     }
 }
@@ -25,6 +27,7 @@ impl Display for DataType {
 pub enum EvaluationError {
     TypeMismatch(DataType, Token, DataType),
     UnknownOperator(Token),
+    UndefinedVariable(DataType),
 }
 
 impl Error for EvaluationError {
@@ -32,6 +35,7 @@ impl Error for EvaluationError {
         match self {
             EvaluationError::TypeMismatch(_, _, _) => "type mismatch",
             EvaluationError::UnknownOperator(_) => "unknown operator",
+            EvaluationError::UndefinedVariable(_) => "undefined variable",
         }
     }
 }
@@ -63,6 +67,9 @@ impl Display for EvaluationError {
                     token.literal, token.span.line, token.span.column
                 )
             }
+            EvaluationError::UndefinedVariable(value) => {
+                write!(f, "unknown identifier {}", value)
+            }
         }
     }
 }
@@ -70,12 +77,15 @@ impl Display for EvaluationError {
 pub struct Evaluator;
 
 impl Evaluator {
-    fn eval_expression(expression: Expression) -> Result<DataType, Box<dyn Error>> {
+    fn eval_expression(
+        expression: Expression,
+        env: &mut Environment,
+    ) -> Result<DataType, Box<dyn Error>> {
         match expression {
             Expression::INT(int) => Ok(DataType::INT(int.value)),
             Expression::BOOLEAN(boolean) => Ok(DataType::BOOLEAN(boolean.value)),
             Expression::PREFIX(prefix) => {
-                let right = Evaluator::eval_expression(*prefix.right)?;
+                let right = Evaluator::eval_expression(*prefix.right, env)?;
 
                 if prefix.operator.kind == TokenKind::BANG {
                     if let DataType::BOOLEAN(value) = right {
@@ -96,8 +106,8 @@ impl Evaluator {
                 Err(Box::new(EvaluationError::UnknownOperator(prefix.operator)))
             }
             Expression::INFIX(infix) => {
-                let left = Evaluator::eval_expression(*infix.left)?;
-                let right = Evaluator::eval_expression(*infix.right)?;
+                let left = Evaluator::eval_expression(*infix.left, env)?;
+                let right = Evaluator::eval_expression(*infix.right, env)?;
                 let operator = infix.operator;
 
                 if let (DataType::INT(left), DataType::INT(right)) = (&left, &right) {
@@ -129,31 +139,40 @@ impl Evaluator {
                 )))
             }
             Expression::IF(expression) => {
-                let condition = match Evaluator::eval_expression(*expression.condition)? {
+                let condition = match Evaluator::eval_expression(*expression.condition, env)? {
                     DataType::BOOLEAN(value) => value,
                     DataType::INT(value) => value != 0,
                     _ => false,
                 };
 
                 match condition {
-                    true => Ok(Evaluator::eval(Statement::Block(expression.consequence))?),
+                    true => Ok(Evaluator::eval(
+                        Statement::Block(expression.consequence),
+                        env,
+                    )?),
                     false => match expression.alternative {
-                        Some(statement) => Ok(Evaluator::eval(Statement::Block(statement))?),
+                        Some(statement) => Ok(Evaluator::eval(Statement::Block(statement), env)?),
                         None => Ok(DataType::NULL),
                     },
                 }
             }
+            Expression::IDENT(expression) => match env.get(&expression.value) {
+                Some(value) => Ok(value.clone()),
+                None => Err(Box::new(EvaluationError::UndefinedVariable(
+                    DataType::IDENT(expression.value),
+                ))),
+            },
             _ => Ok(DataType::NULL),
         }
     }
 
-    pub fn eval(statement: Statement) -> Result<DataType, Box<dyn Error>> {
+    pub fn eval(statement: Statement, env: &mut Environment) -> Result<DataType, Box<dyn Error>> {
         match statement {
             Statement::Block(statement) => {
                 let mut result = DataType::NULL;
 
                 for statement in statement.statements {
-                    result = Evaluator::eval(statement)?;
+                    result = Evaluator::eval(statement, env)?;
 
                     if let DataType::RETURN(_) = result {
                         return Ok(result);
@@ -162,13 +181,18 @@ impl Evaluator {
 
                 Ok(result)
             }
+            Statement::Let(statement) => {
+                let value = Evaluator::eval_expression(statement.expression, env)?;
+                env.set(&statement.identifier, value);
+
+                Ok(DataType::NULL)
+            }
             Statement::Return(statement) => Ok(DataType::RETURN(Box::new(
-                Evaluator::eval_expression(statement.expression)?,
+                Evaluator::eval_expression(statement.expression, env)?,
             ))),
             Statement::Expression(statement) => {
-                Ok(Evaluator::eval_expression(statement.expression)?)
+                Ok(Evaluator::eval_expression(statement.expression, env)?)
             }
-            _ => Ok(DataType::NULL),
         }
     }
 }
@@ -204,8 +228,10 @@ mod tests {
             let mut parser = Parser::new(lexer);
             let program = parser.parse().unwrap();
 
+            let mut env = Environment::new();
+
             for statement in program.statements {
-                match Evaluator::eval(statement) {
+                match Evaluator::eval(statement, &mut env) {
                     Ok(DataType::INT(value)) => assert_eq!(value, expected),
                     _ => panic!("expected an integer, got something else"),
                 }
@@ -258,8 +284,10 @@ mod tests {
             let mut parser = Parser::new(lexer);
             let program = parser.parse().unwrap();
 
+            let mut env = Environment::new();
+
             for statement in program.statements {
-                match Evaluator::eval(statement) {
+                match Evaluator::eval(statement, &mut env) {
                     Ok(DataType::BOOLEAN(value)) => assert_eq!(value, expected),
                     _ => panic!("expected a boolean, got something else"),
                 }
@@ -284,8 +312,10 @@ mod tests {
             let mut parser = Parser::new(lexer);
             let program = parser.parse().unwrap();
 
+            let mut env = Environment::new();
+
             for statement in program.statements {
-                match Evaluator::eval(statement) {
+                match Evaluator::eval(statement, &mut env) {
                     Ok(DataType::INT(value)) => assert_eq!(value, expected),
                     Ok(DataType::NULL) => assert_eq!(expected, 0),
                     _ => panic!("expected an integer, got something else"),
@@ -318,8 +348,10 @@ mod tests {
             let mut parser = Parser::new(lexer);
             let program = parser.parse().unwrap();
 
+            let mut env = Environment::new();
+
             for statement in program.statements {
-                if let Ok(DataType::RETURN(value)) = Evaluator::eval(statement) {
+                if let Ok(DataType::RETURN(value)) = Evaluator::eval(statement, &mut env) {
                     match *value {
                         DataType::INT(value) => assert_eq!(value, expected),
                         _ => panic!("expected an integer, got something else"),
@@ -358,9 +390,35 @@ mod tests {
             let mut parser = Parser::new(lexer);
             let program = parser.parse().unwrap();
 
+            let mut env = Environment::new();
+
             for statement in program.statements {
-                if let Err(error) = Evaluator::eval(statement) {
+                if let Err(error) = Evaluator::eval(statement, &mut env) {
                     assert_eq!(error.to_string(), expected);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_eval_let_statements() {
+        let tests = vec![
+            ("let a = 5; a;", 5),
+            ("let a = 5 * 5; a;", 25),
+            ("let a = 5; let b = a; b;", 5),
+            ("let a = 5; let b = a; let c = a + b + 5; c;", 15),
+        ];
+
+        for (input, expected) in tests {
+            let lexer = Lexer::new(input);
+            let mut parser = Parser::new(lexer);
+            let program = parser.parse().unwrap();
+
+            let mut env = Environment::new();
+
+            for statement in program.statements {
+                if let Ok(DataType::INT(value)) = Evaluator::eval(statement, &mut env) {
+                    assert_eq!(value, expected);
                 }
             }
         }
