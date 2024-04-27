@@ -1,3 +1,11 @@
+## 0.0.7 (2024-04-27)
+
+### Features
+
+#### implement bindings and the environment (#54)
+
+#### implement functions & functions calls (#55)
+
 ## 0.0.6 (2024-04-26)
 
 ### Features
