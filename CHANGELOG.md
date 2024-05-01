@@ -1,3 +1,9 @@
+## 0.0.8 (2024-05-01)
+
+### Features
+
+#### increase stack limit from 2mb to 16mb (#58)
+
 ## 0.0.7 (2024-04-27)
 
 ### Features
