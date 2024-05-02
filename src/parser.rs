@@ -3,8 +3,8 @@ use std::{error::Error, fmt::Display};
 use crate::{
     BlockStatement, BooleanExpression, CallExpression, Expression, ExpressionStatement,
     FunctionExpression, IdentExpression, IfExpression, InfixExpression, IntExpression,
-    LetStatement, Lexer, Precedence, PrefixExpression, Program, ReturnStatement, Statement, Token,
-    TokenKind,
+    LetStatement, Lexer, Precedence, PrefixExpression, Program, ReturnStatement, Statement,
+    StringExpression, Token, TokenKind,
 };
 
 #[derive(Debug)]
@@ -241,6 +241,10 @@ impl<'a> Parser<'a> {
             Some(token) if token.kind == TokenKind::INT => {
                 let value = token.literal.parse::<i64>()?;
                 Expression::INT(IntExpression { token, value })
+            }
+            Some(token) if token.kind == TokenKind::STRING => {
+                let value = token.literal.clone();
+                Expression::STRING(StringExpression { token, value })
             }
             Some(token) if token.kind == TokenKind::TRUE || token.kind == TokenKind::FALSE => {
                 let value = token.kind == TokenKind::TRUE;
@@ -610,7 +614,7 @@ mod tests {
     use crate::{
         BooleanExpression, Expression, IdentExpression, IfExpression, InfixExpression,
         IntExpression, LetStatement, Lexer, PrefixExpression, ReturnStatement, Statement,
-        TokenKind,
+        StringExpression, TokenKind,
     };
 
     use super::*;
@@ -720,6 +724,30 @@ mod tests {
             Statement::Expression(ExpressionStatement { expression, .. }) => match expression {
                 Expression::INT(IntExpression { value, .. }) => {
                     assert_eq!(*value, 5);
+                }
+                _ => unreachable!(),
+            },
+            _ => unreachable!(),
+        }
+    }
+
+    #[test]
+    fn test_string_literal_expressions() {
+        let input = "\"hello world\";";
+
+        let lexer = Lexer::new(input);
+        let mut parser = Parser::new(lexer);
+
+        let program = parser.parse().unwrap();
+
+        assert_eq!(program.statements.len(), 1);
+
+        let statement = &program.statements[0];
+
+        match statement {
+            Statement::Expression(ExpressionStatement { expression, .. }) => match expression {
+                Expression::STRING(StringExpression { value, .. }) => {
+                    assert_eq!(&**value, "hello world");
                 }
                 _ => unreachable!(),
             },

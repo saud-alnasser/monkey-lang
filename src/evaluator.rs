@@ -3,12 +3,13 @@ use std::{cell::RefCell, error::Error, fmt::Display, rc::Rc};
 use crate::{
     BlockStatement, BooleanExpression, CallExpression, Environment, Expression, FunctionExpression,
     IdentExpression, IfExpression, InfixExpression, IntExpression, LetStatement, PrefixExpression,
-    ReturnStatement, Statement, Token, TokenKind,
+    ReturnStatement, Statement, StringExpression, Token, TokenKind,
 };
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum DataType {
     INT(i64),
+    STRING(Box<str>),
     BOOLEAN(bool),
     RETURN(Box<DataType>),
     IDENT(Box<str>),
@@ -24,6 +25,7 @@ impl Display for DataType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             DataType::INT(value) => write!(f, "{}", value),
+            DataType::STRING(value) => write!(f, "{}", value),
             DataType::BOOLEAN(value) => write!(f, "{}", value),
             DataType::RETURN(value) => write!(f, "{}", value),
             DataType::IDENT(value) => write!(f, "{}", value),
@@ -89,6 +91,10 @@ pub struct Evaluator;
 impl Evaluator {
     fn eval_int(expression: IntExpression) -> Result<DataType, Box<dyn Error>> {
         Ok(DataType::INT(expression.value))
+    }
+
+    fn eval_string(expression: StringExpression) -> Result<DataType, Box<dyn Error>> {
+        Ok(DataType::STRING(expression.value))
     }
 
     fn eval_boolean(expression: BooleanExpression) -> Result<DataType, Box<dyn Error>> {
@@ -247,6 +253,9 @@ impl Evaluator {
             Expression::INT(int) => {
                 return Evaluator::eval_int(int);
             }
+            Expression::STRING(string) => {
+                return Evaluator::eval_string(string);
+            }
             Expression::BOOLEAN(boolean) => {
                 return Evaluator::eval_boolean(boolean);
             }
@@ -366,6 +375,26 @@ mod tests {
                 match Evaluator::eval(statement, Rc::clone(&env)) {
                     Ok(DataType::INT(value)) => assert_eq!(value, expected),
                     _ => panic!("expected an integer, got something else"),
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_eval_string_expressions() {
+        let tests = vec![("\"hello world\";", "hello world")];
+
+        for (input, expected) in tests {
+            let lexer = Lexer::new(input);
+            let mut parser = Parser::new(lexer);
+            let program = parser.parse().unwrap();
+
+            let env = Rc::new(RefCell::new(Environment::new(None)));
+
+            for statement in program.statements {
+                match Evaluator::eval(statement, Rc::clone(&env)) {
+                    Ok(DataType::STRING(value)) => assert_eq!(value, expected.into()),
+                    _ => panic!("expected a string, got something else"),
                 }
             }
         }

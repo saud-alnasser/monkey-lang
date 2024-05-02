@@ -279,7 +279,10 @@ impl Lexer<'_> {
         }
     }
 
-    fn consume_literals(chars: &mut Peekable<Chars>, span: &mut SpanTracker) -> Option<Token> {
+    fn consume_integer_literals(
+        chars: &mut Peekable<Chars>,
+        span: &mut SpanTracker,
+    ) -> Option<Token> {
         match utils::take_series_where(chars, |c| c.is_ascii_digit()) {
             Some(literal) => {
                 span.advance(&literal);
@@ -291,6 +294,31 @@ impl Lexer<'_> {
                 })
             }
             None => None,
+        }
+    }
+
+    fn consume_string_literals(
+        chars: &mut Peekable<Chars>,
+        span: &mut SpanTracker,
+    ) -> Option<Token> {
+        match chars.peek() {
+            Some('"') => chars.next(),
+            _ => return None,
+        };
+
+        let literal = utils::take_series_where(chars, |c| *c != '"')?;
+
+        match chars.next() {
+            Some('"') => {
+                span.advance(&literal);
+
+                Some(Token {
+                    span: span.capture(),
+                    kind: TokenKind::STRING,
+                    literal,
+                })
+            }
+            _ => return None,
         }
     }
 
@@ -368,7 +396,11 @@ impl Lexer<'_> {
             return Some(token);
         }
 
-        if let Some(token) = Lexer::consume_literals(&mut self.chars, &mut self.span) {
+        if let Some(token) = Lexer::consume_integer_literals(&mut self.chars, &mut self.span) {
+            return Some(token);
+        }
+
+        if let Some(token) = Lexer::consume_string_literals(&mut self.chars, &mut self.span) {
             return Some(token);
         }
 
@@ -1051,6 +1083,19 @@ mod tests {
         for expected in tokens {
             let actual = lexer.next().unwrap();
             assert_eq!(actual, expected);
+        }
+    }
+
+    #[test]
+    fn test_string_literal() {
+        let tests = vec![(r#""hello world""#, "hello world")];
+
+        for (input, expected) in tests {
+            let mut lexer = Lexer::new(input);
+            let actual = lexer.next().unwrap();
+
+            assert_eq!(actual.kind, TokenKind::STRING);
+            assert_eq!(actual.literal, expected.into());
         }
     }
 }
