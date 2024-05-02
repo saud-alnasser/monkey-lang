@@ -6,10 +6,10 @@ where
 {
     let mut result = String::new();
 
-    while let Some(&c) = chars.peek() {
-        match predicate(&c) {
+    while let Some(c) = chars.peek() {
+        match predicate(c) {
             true => {
-                result.push(c);
+                result.push(*c);
                 chars.next();
             }
             false => break,

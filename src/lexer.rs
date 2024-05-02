@@ -279,6 +279,34 @@ impl Lexer<'_> {
         }
     }
 
+    fn consume_string_literals(
+        chars: &mut Peekable<Chars>,
+        span: &mut SpanTracker,
+    ) -> Option<Token> {
+        if let Some('"') = chars.peek() {
+            let literal = {
+                chars.next();
+                span.advance("\"");
+
+                let literal = utils::take_series_where(chars, |c| *c != '"').unwrap_or_default();
+                span.advance(&literal);
+
+                chars.next();
+                span.advance("\"");
+
+                literal
+            };
+
+            return Some(Token {
+                span: span.capture(),
+                kind: TokenKind::STRING,
+                literal,
+            });
+        }
+
+        None
+    }
+
     fn consume_integer_literals(
         chars: &mut Peekable<Chars>,
         span: &mut SpanTracker,
@@ -294,31 +322,6 @@ impl Lexer<'_> {
                 })
             }
             None => None,
-        }
-    }
-
-    fn consume_string_literals(
-        chars: &mut Peekable<Chars>,
-        span: &mut SpanTracker,
-    ) -> Option<Token> {
-        match chars.peek() {
-            Some('"') => chars.next(),
-            _ => return None,
-        };
-
-        let literal = utils::take_series_where(chars, |c| *c != '"')?;
-
-        match chars.next() {
-            Some('"') => {
-                span.advance(&literal);
-
-                Some(Token {
-                    span: span.capture(),
-                    kind: TokenKind::STRING,
-                    literal,
-                })
-            }
-            _ => return None,
         }
     }
 
@@ -396,11 +399,11 @@ impl Lexer<'_> {
             return Some(token);
         }
 
-        if let Some(token) = Lexer::consume_integer_literals(&mut self.chars, &mut self.span) {
+        if let Some(token) = Lexer::consume_string_literals(&mut self.chars, &mut self.span) {
             return Some(token);
         }
 
-        if let Some(token) = Lexer::consume_string_literals(&mut self.chars, &mut self.span) {
+        if let Some(token) = Lexer::consume_integer_literals(&mut self.chars, &mut self.span) {
             return Some(token);
         }
 
@@ -1088,7 +1091,7 @@ mod tests {
 
     #[test]
     fn test_string_literal() {
-        let tests = vec![(r#""hello world""#, "hello world")];
+        let tests = vec![(r#""hello, world!""#, "hello, world!")];
 
         for (input, expected) in tests {
             let mut lexer = Lexer::new(input);
