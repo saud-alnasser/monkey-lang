@@ -1,9 +1,7 @@
 use std::{cell::RefCell, error::Error, fmt::Display, rc::Rc};
 
 use crate::{
-    BlockStatement, BooleanExpression, CallExpression, Environment, Expression, FunctionExpression,
-    IdentExpression, IfExpression, InfixExpression, IntExpression, LetStatement, PrefixExpression,
-    ReturnStatement, Statement, StringExpression, Token, TokenKind,
+    BlockStatement, Environment, Expression, IdentExpression, Statement, Token, TokenKind,
 };
 
 #[derive(Debug, PartialEq, Clone)]
@@ -89,232 +87,138 @@ impl Display for EvaluationError {
 pub struct Evaluator;
 
 impl Evaluator {
-    fn eval_int(expression: IntExpression) -> Result<DataType, Box<dyn Error>> {
-        Ok(DataType::INT(expression.value))
-    }
-
-    fn eval_string(expression: StringExpression) -> Result<DataType, Box<dyn Error>> {
-        Ok(DataType::STRING(expression.value))
-    }
-
-    fn eval_boolean(expression: BooleanExpression) -> Result<DataType, Box<dyn Error>> {
-        Ok(DataType::BOOLEAN(expression.value))
-    }
-
-    fn eval_prefix(
-        expression: PrefixExpression,
-        env: Rc<RefCell<Environment>>,
-    ) -> Result<DataType, Box<dyn Error>> {
-        let right = Evaluator::eval_expression(*expression.right, Rc::clone(&env))?;
-
-        if expression.operator.kind == TokenKind::BANG {
-            if let DataType::BOOLEAN(value) = right {
-                return Ok(DataType::BOOLEAN(!value));
-            }
-
-            if let DataType::INT(value) = right {
-                return Ok(DataType::BOOLEAN(value == 0));
-            }
-        };
-
-        if expression.operator.kind == TokenKind::MINUS {
-            if let DataType::INT(value) = right {
-                return Ok(DataType::INT(-value));
-            };
-        }
-
-        Err(Box::new(EvaluationError::UnknownOperator(
-            expression.operator,
-        )))
-    }
-
-    fn eval_infix(
-        expression: InfixExpression,
-        env: Rc<RefCell<Environment>>,
-    ) -> Result<DataType, Box<dyn Error>> {
-        let left = Evaluator::eval_expression(*expression.left, Rc::clone(&env))?;
-        let right = Evaluator::eval_expression(*expression.right, Rc::clone(&env))?;
-        let operator = expression.operator;
-
-        if let (DataType::INT(left), DataType::INT(right)) = (&left, &right) {
-            match operator.kind {
-                TokenKind::PLUS => return Ok(DataType::INT(left + right)),
-                TokenKind::MINUS => return Ok(DataType::INT(left - right)),
-                TokenKind::ASTERISK => return Ok(DataType::INT(left * right)),
-                TokenKind::SLASH => return Ok(DataType::INT(left / right)),
-                TokenKind::LT => return Ok(DataType::BOOLEAN(left < right)),
-                TokenKind::GT => return Ok(DataType::BOOLEAN(left > right)),
-                TokenKind::LTE => return Ok(DataType::BOOLEAN(left <= right)),
-                TokenKind::GTE => return Ok(DataType::BOOLEAN(left >= right)),
-                TokenKind::EQ => return Ok(DataType::BOOLEAN(left == right)),
-                TokenKind::NEQ => return Ok(DataType::BOOLEAN(left != right)),
-                _ => return Err(Box::new(EvaluationError::UnknownOperator(operator))),
-            }
-        }
-
-        if let (DataType::BOOLEAN(left), DataType::BOOLEAN(right)) = (&left, &right) {
-            match operator.kind {
-                TokenKind::EQ => return Ok(DataType::BOOLEAN(left == right)),
-                TokenKind::NEQ => return Ok(DataType::BOOLEAN(left != right)),
-                _ => return Err(Box::new(EvaluationError::UnknownOperator(operator))),
-            }
-        }
-
-        Err(Box::new(EvaluationError::TypeMismatch(
-            left, operator, right,
-        )))
-    }
-
-    fn eval_if_else(
-        expression: IfExpression,
-        env: Rc<RefCell<Environment>>,
-    ) -> Result<DataType, Box<dyn Error>> {
-        let condition = match Evaluator::eval_expression(*expression.condition, Rc::clone(&env))? {
-            DataType::BOOLEAN(value) => value,
-            DataType::INT(value) => value != 0,
-            _ => false,
-        };
-
-        match condition {
-            true => Ok(Evaluator::eval(
-                Statement::Block(expression.consequence),
-                Rc::clone(&env),
-            )?),
-            false => match expression.alternative {
-                Some(statement) => Ok(Evaluator::eval(Statement::Block(statement), env)?),
-                None => Ok(DataType::NULL),
-            },
-        }
-    }
-
-    fn eval_identifier(
-        expression: IdentExpression,
-        env: Rc<RefCell<Environment>>,
-    ) -> Result<DataType, Box<dyn Error>> {
-        match env.borrow().get(&expression.value) {
-            Some(value) => Ok(value.clone()),
-            None => Err(Box::new(EvaluationError::UndefinedVariable(
-                DataType::IDENT(expression.value),
-            ))),
-        }
-    }
-
-    fn eval_function(
-        expression: FunctionExpression,
-        env: Rc<RefCell<Environment>>,
-    ) -> Result<DataType, Box<dyn Error>> {
-        Ok(DataType::FUNCTION {
-            parameters: expression.parameters,
-            body: expression.body,
-            env: Rc::new(RefCell::new(Environment::new(Some(env)))),
-        })
-    }
-
-    fn eval_function_call(
-        expression: CallExpression,
-        env: Rc<RefCell<Environment>>,
-    ) -> Result<DataType, Box<dyn Error>> {
-        let function = Evaluator::eval_expression(*expression.function, Rc::clone(&env))?;
-
-        let arguments = expression
-            .arguments
-            .iter()
-            .map(|argument| {
-                Evaluator::eval_expression(argument.clone(), Rc::clone(&env))
-                    .expect("failed to evaluate function call passed arguments")
-            })
-            .collect::<Vec<DataType>>();
-
-        if let DataType::FUNCTION {
-            parameters,
-            body,
-            env,
-        } = function
-        {
-            let extended_env = Rc::new(RefCell::new(Environment::new(Some(env))));
-
-            for (parameter, argument) in parameters.iter().zip(arguments.iter()) {
-                extended_env
-                    .borrow_mut()
-                    .set(&parameter.value, argument.clone());
-            }
-
-            return Evaluator::eval_block(body, extended_env);
-        }
-
-        Err(Box::new(EvaluationError::UnknownOperator(expression.token)))
-    }
-
     fn eval_expression(
         expression: Expression,
         env: Rc<RefCell<Environment>>,
     ) -> Result<DataType, Box<dyn Error>> {
         match expression {
-            Expression::INT(int) => {
-                return Evaluator::eval_int(int);
+            Expression::INT(expression) => {
+                return Ok(DataType::INT(expression.value));
             }
-            Expression::STRING(string) => {
-                return Evaluator::eval_string(string);
+            Expression::STRING(expression) => {
+                return Ok(DataType::STRING(expression.value));
             }
-            Expression::BOOLEAN(boolean) => {
-                return Evaluator::eval_boolean(boolean);
+            Expression::BOOLEAN(expression) => {
+                return Ok(DataType::BOOLEAN(expression.value));
             }
-            Expression::PREFIX(prefix) => {
-                return Evaluator::eval_prefix(prefix, Rc::clone(&env));
+            Expression::PREFIX(expression) => {
+                let right = Evaluator::eval_expression(*expression.right, Rc::clone(&env))?;
+
+                if expression.operator.kind == TokenKind::BANG {
+                    if let DataType::BOOLEAN(value) = right {
+                        return Ok(DataType::BOOLEAN(!value));
+                    }
+
+                    if let DataType::INT(value) = right {
+                        return Ok(DataType::BOOLEAN(value == 0));
+                    }
+                };
+
+                if expression.operator.kind == TokenKind::MINUS {
+                    if let DataType::INT(value) = right {
+                        return Ok(DataType::INT(-value));
+                    };
+                }
+
+                Err(Box::new(EvaluationError::UnknownOperator(
+                    expression.operator,
+                )))
             }
-            Expression::INFIX(infix) => {
-                return Evaluator::eval_infix(infix, Rc::clone(&env));
+            Expression::INFIX(expression) => {
+                let left = Evaluator::eval_expression(*expression.left, Rc::clone(&env))?;
+                let right = Evaluator::eval_expression(*expression.right, Rc::clone(&env))?;
+                let operator = expression.operator;
+
+                if let (DataType::INT(left), DataType::INT(right)) = (&left, &right) {
+                    match operator.kind {
+                        TokenKind::PLUS => return Ok(DataType::INT(left + right)),
+                        TokenKind::MINUS => return Ok(DataType::INT(left - right)),
+                        TokenKind::ASTERISK => return Ok(DataType::INT(left * right)),
+                        TokenKind::SLASH => return Ok(DataType::INT(left / right)),
+                        TokenKind::LT => return Ok(DataType::BOOLEAN(left < right)),
+                        TokenKind::GT => return Ok(DataType::BOOLEAN(left > right)),
+                        TokenKind::LTE => return Ok(DataType::BOOLEAN(left <= right)),
+                        TokenKind::GTE => return Ok(DataType::BOOLEAN(left >= right)),
+                        TokenKind::EQ => return Ok(DataType::BOOLEAN(left == right)),
+                        TokenKind::NEQ => return Ok(DataType::BOOLEAN(left != right)),
+                        _ => return Err(Box::new(EvaluationError::UnknownOperator(operator))),
+                    }
+                }
+
+                if let (DataType::BOOLEAN(left), DataType::BOOLEAN(right)) = (&left, &right) {
+                    match operator.kind {
+                        TokenKind::EQ => return Ok(DataType::BOOLEAN(left == right)),
+                        TokenKind::NEQ => return Ok(DataType::BOOLEAN(left != right)),
+                        _ => return Err(Box::new(EvaluationError::UnknownOperator(operator))),
+                    }
+                }
+
+                Err(Box::new(EvaluationError::TypeMismatch(
+                    left, operator, right,
+                )))
             }
             Expression::IF(expression) => {
-                return Evaluator::eval_if_else(expression, Rc::clone(&env));
+                let condition =
+                    match Evaluator::eval_expression(*expression.condition, Rc::clone(&env))? {
+                        DataType::BOOLEAN(value) => value,
+                        DataType::INT(value) => value != 0,
+                        _ => false,
+                    };
+
+                match condition {
+                    true => Ok(Evaluator::eval(
+                        Statement::Block(expression.consequence),
+                        Rc::clone(&env),
+                    )?),
+                    false => match expression.alternative {
+                        Some(statement) => Ok(Evaluator::eval(Statement::Block(statement), env)?),
+                        None => Ok(DataType::NULL),
+                    },
+                }
             }
-            Expression::IDENT(expression) => {
-                return Evaluator::eval_identifier(expression, Rc::clone(&env));
-            }
-            Expression::FUNCTION(expression) => {
-                return Evaluator::eval_function(expression, Rc::clone(&env));
-            }
+            Expression::IDENT(expression) => match env.borrow().get(&expression.value) {
+                Some(value) => Ok(value.clone()),
+                None => Err(Box::new(EvaluationError::UndefinedVariable(
+                    DataType::IDENT(expression.value),
+                ))),
+            },
+            Expression::FUNCTION(expression) => Ok(DataType::FUNCTION {
+                parameters: expression.parameters,
+                body: expression.body,
+                env: Rc::new(RefCell::new(Environment::new(Some(env)))),
+            }),
             Expression::CALL(expression) => {
-                return Evaluator::eval_function_call(expression, Rc::clone(&env));
+                let function = Evaluator::eval_expression(*expression.function, Rc::clone(&env))?;
+
+                let arguments = expression
+                    .arguments
+                    .iter()
+                    .map(|argument| {
+                        Evaluator::eval_expression(argument.clone(), Rc::clone(&env))
+                            .expect("failed to evaluate function call passed arguments")
+                    })
+                    .collect::<Vec<DataType>>();
+
+                if let DataType::FUNCTION {
+                    parameters,
+                    body,
+                    env,
+                } = function
+                {
+                    let extended_env = Rc::new(RefCell::new(Environment::new(Some(env))));
+
+                    for (parameter, argument) in parameters.iter().zip(arguments.iter()) {
+                        extended_env
+                            .borrow_mut()
+                            .set(&parameter.value, argument.clone());
+                    }
+
+                    return Evaluator::eval(Statement::Block(body), extended_env);
+                }
+
+                Err(Box::new(EvaluationError::UnknownOperator(expression.token)))
             }
         }
-    }
-
-    fn eval_block(
-        block: BlockStatement,
-        env: Rc<RefCell<Environment>>,
-    ) -> Result<DataType, Box<dyn Error>> {
-        let mut result = DataType::NULL;
-
-        for statement in block.statements {
-            result = Evaluator::eval(statement, Rc::clone(&env))?;
-
-            if let DataType::RETURN(_) = result {
-                return Ok(result);
-            }
-        }
-
-        Ok(result)
-    }
-
-    fn eval_let(
-        statement: LetStatement,
-        env: Rc<RefCell<Environment>>,
-    ) -> Result<DataType, Box<dyn Error>> {
-        let value = Evaluator::eval_expression(statement.expression, Rc::clone(&env))?;
-        env.borrow_mut().set(&statement.identifier, value);
-
-        Ok(DataType::NULL)
-    }
-
-    fn eval_return(
-        statement: ReturnStatement,
-        env: Rc<RefCell<Environment>>,
-    ) -> Result<DataType, Box<dyn Error>> {
-        Ok(DataType::RETURN(Box::new(Evaluator::eval_expression(
-            statement.expression,
-            Rc::clone(&env),
-        )?)))
     }
 
     pub fn eval(
@@ -322,17 +226,30 @@ impl Evaluator {
         env: Rc<RefCell<Environment>>,
     ) -> Result<DataType, Box<dyn Error>> {
         match statement {
-            Statement::Block(statement) => {
-                return Evaluator::eval_block(statement, Rc::clone(&env));
+            Statement::Block(block) => {
+                let mut result = DataType::NULL;
+
+                for statement in block.statements {
+                    result = Evaluator::eval(statement, Rc::clone(&env))?;
+
+                    if let DataType::RETURN(_) = result {
+                        return Ok(result);
+                    }
+                }
+
+                Ok(result)
             }
             Statement::Let(statement) => {
-                return Evaluator::eval_let(statement, Rc::clone(&env));
+                let value = Evaluator::eval_expression(statement.expression, Rc::clone(&env))?;
+                env.borrow_mut().set(&statement.identifier, value);
+
+                Ok(DataType::NULL)
             }
-            Statement::Return(statement) => {
-                return Evaluator::eval_return(statement, Rc::clone(&env));
-            }
+            Statement::Return(statement) => Ok(DataType::RETURN(Box::new(
+                Evaluator::eval_expression(statement.expression, Rc::clone(&env))?,
+            ))),
             Statement::Expression(statement) => {
-                return Evaluator::eval_expression(statement.expression, Rc::clone(&env));
+                Evaluator::eval_expression(statement.expression, Rc::clone(&env))
             }
         }
     }
