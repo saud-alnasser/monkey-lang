@@ -2,9 +2,9 @@ use std::{error::Error, fmt::Display};
 
 use crate::{
     ArrayExpression, BlockStatement, BooleanExpression, CallExpression, Expression,
-    ExpressionStatement, FunctionExpression, IdentExpression, IfExpression, InfixExpression,
-    IntExpression, LetStatement, Lexer, Precedence, PrefixExpression, Program, ReturnStatement,
-    Statement, StringExpression, Token, TokenKind,
+    ExpressionStatement, FunctionExpression, IdentExpression, IfExpression, IndexExpression,
+    InfixExpression, IntExpression, LetStatement, Lexer, Precedence, PrefixExpression, Program,
+    ReturnStatement, Statement, StringExpression, Token, TokenKind,
 };
 
 #[derive(Debug)]
@@ -14,6 +14,7 @@ pub enum ParseError {
     MissingClosingParenthesis(Option<Token>),
     MissingOpeningBrace(Option<Token>),
     MissingClosingBrace(Option<Token>),
+    MissingOpeningBracket(Option<Token>),
     MissingClosingBracket(Option<Token>),
     MissingLetKeyword(Option<Token>),
     MissingAssignmentOperator(Option<Token>),
@@ -33,6 +34,7 @@ impl Error for ParseError {
             ParseError::MissingClosingParenthesis(_) => "missing closing parenthesis",
             ParseError::MissingOpeningBrace(_) => "missing opening brace",
             ParseError::MissingClosingBrace(_) => "missing closing brace",
+            ParseError::MissingOpeningBracket(_) => "missing opening bracket",
             ParseError::MissingClosingBracket(_) => "missing closing bracket",
             ParseError::MissingLetKeyword(_) => "missing let keyword",
             ParseError::MissingAssignmentOperator(_) => "missing assignment operator",
@@ -81,6 +83,14 @@ impl Display for ParseError {
                     token.literal, token.span.line, token.span.column
                 ),
                 None => write!(f, "expected closing brace, got EOF"),
+            },
+            ParseError::MissingOpeningBracket(token) => match token {
+                Some(token) => write!(
+                    f,
+                    "expected opening bracket, got {} at {}:{}",
+                    token.literal, token.span.line, token.span.column
+                ),
+                None => write!(f, "expected opening bracket, got EOF"),
             },
             ParseError::MissingClosingBracket(token) => match token {
                 Some(token) => write!(
@@ -245,6 +255,33 @@ impl<'a> Parser<'a> {
                             arguments,
                         })
                     }
+                    Some(token) if token.kind == TokenKind::LBRACKET => {
+                        let token = {
+                            match lexer.next() {
+                                Some(token) if token.kind == TokenKind::LBRACKET => token,
+                                option => {
+                                    return Err(Box::new(ParseError::MissingOpeningBracket(option)))
+                                }
+                            }
+                        };
+
+                        let left = Box::new(identifier);
+
+                        let index = Box::new({
+                            let index = Parser::parse_expression(lexer, Precedence::LOWEST)?;
+
+                            match lexer.next() {
+                                Some(token) if token.kind == TokenKind::RBRACKET => (),
+                                option => {
+                                    return Err(Box::new(ParseError::MissingClosingBracket(option)))
+                                }
+                            };
+
+                            index
+                        });
+
+                        Expression::INDEX(IndexExpression { token, left, index })
+                    }
                     _ => identifier,
                 }
             }
@@ -278,11 +315,44 @@ impl<'a> Parser<'a> {
                     }
                 }
 
-                match lexer.next() {
+                let array = match lexer.next() {
                     Some(token) if token.kind == TokenKind::RBRACKET => {
                         Expression::ARRAY(ArrayExpression { token, elements })
                     }
                     option => return Err(Box::new(ParseError::MissingClosingBracket(option))),
+                };
+
+                match lexer.peek() {
+                    Some(token) if token.kind == TokenKind::LBRACKET => {
+                        let token = {
+                            match lexer.next() {
+                                Some(token) if token.kind == TokenKind::LBRACKET => token,
+                                option => {
+                                    return Err(Box::new(ParseError::MissingOpeningBracket(option)))
+                                }
+                            }
+                        };
+
+                        let left = Box::new(array);
+
+                        let index = Box::new({
+                            let index = Parser::parse_expression(lexer, Precedence::LOWEST)?;
+
+                            match lexer.next() {
+                                Some(token) if token.kind == TokenKind::RBRACKET => (),
+                                option => {
+                                    return Err(Box::new(ParseError::MissingClosingBracket(
+                                        option,
+                                    )));
+                                }
+                            };
+
+                            index
+                        });
+
+                        Expression::INDEX(IndexExpression { token, left, index })
+                    }
+                    _ => array,
                 }
             }
             Some(token) if token.kind == TokenKind::IF => {
@@ -1326,6 +1396,41 @@ mod tests {
                             }
                             _ => unreachable!(),
                         }
+                    }
+                }
+                _ => unreachable!(),
+            },
+            _ => unreachable!(),
+        }
+    }
+
+    #[test]
+    fn test_index_expressions() {
+        let input = "array[1 + 1];";
+
+        let lexer = Lexer::new(input);
+        let mut parser = Parser::new(lexer);
+        let program = parser.parse().unwrap();
+
+        assert_eq!(program.statements.len(), 1);
+
+        let statement = &program.statements[0];
+
+        match statement {
+            Statement::Expression(ExpressionStatement { expression, .. }) => match expression {
+                Expression::INDEX(index) => {
+                    match index.left.as_ref() {
+                        Expression::IDENT(IdentExpression { value, .. }) => {
+                            assert_eq!(&**value, "array");
+                        }
+                        _ => unreachable!(),
+                    }
+
+                    match index.index.as_ref() {
+                        Expression::INFIX(InfixExpression { operator, .. }) => {
+                            assert_eq!(operator.kind, TokenKind::PLUS);
+                        }
+                        _ => unreachable!(),
                     }
                 }
                 _ => unreachable!(),

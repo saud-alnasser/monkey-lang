@@ -161,6 +161,19 @@ impl Display for ArrayExpression {
 }
 
 #[derive(Debug, PartialEq, Clone)]
+pub struct IndexExpression {
+    pub token: Token,
+    pub left: Box<Expression>,
+    pub index: Box<Expression>,
+}
+
+impl Display for IndexExpression {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "({}[{}])", self.left, self.index)
+    }
+}
+
+#[derive(Debug, PartialEq, Clone)]
 pub struct IfExpression {
     pub token: Token,
     pub condition: Box<Expression>,
@@ -272,6 +285,7 @@ pub enum Expression {
     STRING(StringExpression),
     BOOLEAN(BooleanExpression),
     ARRAY(ArrayExpression),
+    INDEX(IndexExpression),
     IF(IfExpression),
     FUNCTION(FunctionExpression),
     CALL(CallExpression),
@@ -287,6 +301,7 @@ impl Display for Expression {
             Expression::STRING(expression) => write!(f, "{}", expression),
             Expression::BOOLEAN(expression) => write!(f, "{}", expression),
             Expression::ARRAY(expression) => write!(f, "{}", expression),
+            Expression::INDEX(expression) => write!(f, "{}", expression),
             Expression::IF(expression) => write!(f, "{}", expression),
             Expression::FUNCTION(expression) => write!(f, "{}", expression),
             Expression::CALL(expression) => write!(f, "{}", expression),

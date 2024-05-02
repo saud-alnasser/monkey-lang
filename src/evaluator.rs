@@ -50,6 +50,7 @@ impl Display for DataType {
 #[derive(Debug)]
 pub enum EvaluationError {
     TypeMismatch(DataType, Token, DataType),
+    IndexTypeMismatch(DataType, Token),
     UnknownOperator(Token),
     UndefinedVariable(DataType),
 }
@@ -58,6 +59,7 @@ impl Error for EvaluationError {
     fn description(&self) -> &str {
         match self {
             EvaluationError::TypeMismatch(_, _, _) => "type mismatch",
+            EvaluationError::IndexTypeMismatch(_, _) => "index type mismatch",
             EvaluationError::UnknownOperator(_) => "unknown operator",
             EvaluationError::UndefinedVariable(_) => "undefined variable",
         }
@@ -69,21 +71,16 @@ impl Display for EvaluationError {
         match self {
             EvaluationError::TypeMismatch(left, token, right) => write!(
                 f,
-                "type mismatch {} {} {} at {}:{}",
-                match left {
-                    DataType::INT(_) => "INTEGER",
-                    DataType::BOOLEAN(_) => "BOOLEAN",
-                    _ => "UNKNOWN",
-                },
-                token.literal,
-                match right {
-                    DataType::INT(_) => "INTEGER",
-                    DataType::BOOLEAN(_) => "BOOLEAN",
-                    _ => "UNKNOWN",
-                },
-                token.span.line,
-                token.span.column
+                "type mismatch {:?} {} {:?} at {}:{}",
+                left, token.literal, right, token.span.line, token.span.column
             ),
+            EvaluationError::IndexTypeMismatch(value, token) => {
+                write!(
+                    f,
+                    "index type mismatch got={:?}, want=INT at {}:{}",
+                    value, token.span.line, token.span.column
+                )
+            }
             EvaluationError::UnknownOperator(token) => {
                 write!(
                     f,
@@ -126,6 +123,23 @@ impl Evaluator {
                     .collect::<Vec<DataType>>();
 
                 return Ok(DataType::ARRAY(elements));
+            }
+            Expression::INDEX(expression) => {
+                let left = Evaluator::eval_expression(*expression.left, Rc::clone(&env))?;
+                let index = Evaluator::eval_expression(*expression.index, Rc::clone(&env))?;
+
+                if let (DataType::ARRAY(array), DataType::INT(index)) = (&left, &index) {
+                    if index < &0 || *index as usize >= array.len() {
+                        return Ok(DataType::NULL);
+                    }
+
+                    return Ok(array[*index as usize].clone());
+                }
+
+                Err(Box::new(EvaluationError::IndexTypeMismatch(
+                    index,
+                    expression.token,
+                )))
             }
             Expression::PREFIX(expression) => {
                 let right = Evaluator::eval_expression(*expression.right, Rc::clone(&env))?;
@@ -478,6 +492,36 @@ mod tests {
     }
 
     #[test]
+    fn test_eval_index_expressions() {
+        let tests = vec![
+            ("[1, 2, 3][0];", 1),
+            ("[1, 2, 3][1];", 2),
+            ("[1, 2, 3][2];", 3),
+            ("let i = 0; [1][i];", 1),
+            ("[1, 2, 3][1 + 1];", 3),
+            ("let array = [1, 2, 3]; array[2];", 3),
+            ("let array = [1, 2, 3]; array[0] + array[1] + array[2];", 6),
+            ("let array = [1, 2, 3]; let i = array[0]; array[i];", 2),
+            ("[1, 2, 3][3];", 0),
+            ("[1, 2, 3][-1];", 0),
+        ];
+
+        for (input, expected) in tests {
+            let lexer = Lexer::new(input);
+            let mut parser = Parser::new(lexer);
+
+            let program = parser.parse().unwrap();
+            let env = Rc::new(RefCell::new(Environment::new(None)));
+
+            match Evaluator::execute(program, env) {
+                Ok(DataType::INT(value)) => assert_eq!(value, expected),
+                Ok(DataType::NULL) => assert_eq!(0, expected),
+                _ => panic!("expected an integer, got something else"),
+            }
+        }
+    }
+
+    #[test]
     fn test_eval_if_else_expressions() {
         let tests = vec![
             ("if (true) { 10; };", 10),
@@ -543,8 +587,11 @@ mod tests {
     #[test]
     fn test_eval_error_handling() {
         let tests = vec![
-            ("5 + true;", "type mismatch INTEGER + BOOLEAN at 1:3"),
-            ("5 + true; 5;", "type mismatch INTEGER + BOOLEAN at 1:3"),
+            ("5 + true;", "type mismatch INT(5) + BOOLEAN(true) at 1:3"),
+            (
+                "5 + true; 5;",
+                "type mismatch INT(5) + BOOLEAN(true) at 1:3",
+            ),
             ("-true;", "unknown operator - at 1:1"),
             ("true + false;", "unknown operator + at 1:6"),
             ("5; true + false; 5;", "unknown operator + at 1:9"),
