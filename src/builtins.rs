@@ -1,7 +1,7 @@
 use crate::DataType;
 
-pub fn builtins() -> [(&'static str, DataType); 4] {
-    [
+pub fn builtins() -> Vec<(&'static str, DataType)> {
+    vec![
         (
             "len",
             DataType::BUILTIN {
@@ -106,6 +106,35 @@ pub fn builtins() -> [(&'static str, DataType); 4] {
                         },
                         _ => Err(format!(
                             r#"argument passed to BUILTIN("rest") is not supported. got={:?}, want=ARRAY"#,
+                            args[0]
+                        )
+                        .into()),
+                    }
+                },
+            },
+        ),
+        (
+            "push",
+            DataType::BUILTIN {
+                func: |args| {
+                    if args.len() != 2 {
+                        return Err(format!(
+                            r#"extra arguments are passed to BUILTIN("push"). got={}, want=2"#,
+                            args.len()
+                        )
+                        .into());
+                    }
+
+                    match &args[0] {
+                        DataType::ARRAY(array) => {
+                            let mut new_array = array.clone();
+
+                            new_array.push(args[1].clone());
+
+                            Ok(DataType::ARRAY(new_array))
+                        },
+                        _ => Err(format!(
+                            r#"argument[0] passed to BUILTIN("push") is not supported. got={:?}, want=ARRAY"#,
                             args[0]
                         )
                         .into()),
