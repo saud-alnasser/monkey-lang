@@ -153,6 +153,14 @@ impl Evaluator {
                     }
                 }
 
+                if let (DataType::STRING(left), DataType::STRING(right)) = (&left, &right) {
+                    if operator.kind == TokenKind::PLUS {
+                        return Ok(DataType::STRING(
+                            format!("{}{}", left, right).into_boxed_str(),
+                        ));
+                    }
+                }
+
                 Err(Box::new(EvaluationError::TypeMismatch(
                     left, operator, right,
                 )))
@@ -276,6 +284,8 @@ impl Evaluator {
 
 #[cfg(test)]
 mod tests {
+    use std::vec;
+
     use crate::{Lexer, Parser};
 
     use super::*;
@@ -317,6 +327,24 @@ mod tests {
     #[test]
     fn test_eval_string_expressions() {
         let tests = vec![("\"hello world\";", "hello world")];
+
+        for (input, expected) in tests {
+            let lexer = Lexer::new(input);
+            let mut parser = Parser::new(lexer);
+
+            let program = parser.parse().unwrap();
+            let env = Rc::new(RefCell::new(Environment::new(None)));
+
+            match Evaluator::execute(program, env) {
+                Ok(DataType::STRING(value)) => assert_eq!(value, expected.into()),
+                _ => panic!("expected a string, got something else"),
+            }
+        }
+    }
+
+    #[test]
+    fn test_eval_string_concatenation() {
+        let tests = vec![(r#""hello" + ", " + "world!";"#, "hello, world!")];
 
         for (input, expected) in tests {
             let lexer = Lexer::new(input);
