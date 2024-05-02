@@ -36,6 +36,8 @@ pub enum TokenKind {
     RPAREN,
     LBRACE,
     RBRACE,
+    RBRACKET,
+    LBRACKET,
 
     // literals
     INT,
@@ -129,6 +131,32 @@ pub struct BooleanExpression {
 impl Display for BooleanExpression {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.value)
+    }
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub struct ArrayExpression {
+    pub token: Token,
+    pub elements: Vec<Expression>,
+}
+
+impl Display for ArrayExpression {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut output = String::new();
+
+        let mut elements = String::new();
+
+        for (i, element) in self.elements.iter().enumerate() {
+            elements.push_str(&format!("{}", element));
+
+            if i < self.elements.len() - 1 {
+                elements.push_str(", ");
+            }
+        }
+
+        output.push_str(&format!("[{}]", elements));
+
+        write!(f, "{}", output)
     }
 }
 
@@ -243,6 +271,7 @@ pub enum Expression {
     INT(IntExpression),
     STRING(StringExpression),
     BOOLEAN(BooleanExpression),
+    ARRAY(ArrayExpression),
     IF(IfExpression),
     FUNCTION(FunctionExpression),
     CALL(CallExpression),
@@ -257,6 +286,7 @@ impl Display for Expression {
             Expression::INT(expression) => write!(f, "{}", expression),
             Expression::STRING(expression) => write!(f, "{}", expression),
             Expression::BOOLEAN(expression) => write!(f, "{}", expression),
+            Expression::ARRAY(expression) => write!(f, "{}", expression),
             Expression::IF(expression) => write!(f, "{}", expression),
             Expression::FUNCTION(expression) => write!(f, "{}", expression),
             Expression::CALL(expression) => write!(f, "{}", expression),

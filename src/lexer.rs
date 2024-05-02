@@ -275,6 +275,24 @@ impl Lexer<'_> {
                     literal: "}".into(),
                 })
             }
+            '[' => {
+                chars.next();
+                span.advance("[");
+                Some(Token {
+                    span: span.capture(),
+                    kind: TokenKind::LBRACKET,
+                    literal: "[".into(),
+                })
+            }
+            ']' => {
+                chars.next();
+                span.advance("]");
+                Some(Token {
+                    span: span.capture(),
+                    kind: TokenKind::RBRACKET,
+                    literal: "]".into(),
+                })
+            }
             _ => None,
         }
     }
@@ -463,7 +481,7 @@ mod tests {
 
     #[test]
     fn test_symbols() {
-        let input = "= + ( ) { } , ; ! - / * < > == != <= >=";
+        let input = "= + ( ) { } [ ] , ; ! - / * < > == != <= >=";
 
         let tokens = vec![
             Token {
@@ -526,13 +544,31 @@ mod tests {
                     column: 13,
                     length: 1,
                 },
+                kind: TokenKind::LBRACKET,
+                literal: "[".into(),
+            },
+            Token {
+                span: TokenSpan {
+                    line: 1,
+                    column: 15,
+                    length: 1,
+                },
+                kind: TokenKind::RBRACKET,
+                literal: "]".into(),
+            },
+            Token {
+                span: TokenSpan {
+                    line: 1,
+                    column: 17,
+                    length: 1,
+                },
                 kind: TokenKind::COMMA,
                 literal: ",".into(),
             },
             Token {
                 span: TokenSpan {
                     line: 1,
-                    column: 15,
+                    column: 19,
                     length: 1,
                 },
                 kind: TokenKind::SEMICOLON,
@@ -541,7 +577,7 @@ mod tests {
             Token {
                 span: TokenSpan {
                     line: 1,
-                    column: 17,
+                    column: 21,
                     length: 1,
                 },
                 kind: TokenKind::BANG,
@@ -550,7 +586,7 @@ mod tests {
             Token {
                 span: TokenSpan {
                     line: 1,
-                    column: 19,
+                    column: 23,
                     length: 1,
                 },
                 kind: TokenKind::MINUS,
@@ -559,7 +595,7 @@ mod tests {
             Token {
                 span: TokenSpan {
                     line: 1,
-                    column: 21,
+                    column: 25,
                     length: 1,
                 },
                 kind: TokenKind::SLASH,
@@ -568,7 +604,7 @@ mod tests {
             Token {
                 span: TokenSpan {
                     line: 1,
-                    column: 23,
+                    column: 27,
                     length: 1,
                 },
                 kind: TokenKind::ASTERISK,
@@ -577,7 +613,7 @@ mod tests {
             Token {
                 span: TokenSpan {
                     line: 1,
-                    column: 25,
+                    column: 29,
                     length: 1,
                 },
                 kind: TokenKind::LT,
@@ -586,7 +622,7 @@ mod tests {
             Token {
                 span: TokenSpan {
                     line: 1,
-                    column: 27,
+                    column: 31,
                     length: 1,
                 },
                 kind: TokenKind::GT,
@@ -595,7 +631,7 @@ mod tests {
             Token {
                 span: TokenSpan {
                     line: 1,
-                    column: 29,
+                    column: 33,
                     length: 2,
                 },
                 kind: TokenKind::EQ,
@@ -604,7 +640,7 @@ mod tests {
             Token {
                 span: TokenSpan {
                     line: 1,
-                    column: 32,
+                    column: 36,
                     length: 2,
                 },
                 kind: TokenKind::NEQ,
@@ -613,7 +649,7 @@ mod tests {
             Token {
                 span: TokenSpan {
                     line: 1,
-                    column: 35,
+                    column: 39,
                     length: 2,
                 },
                 kind: TokenKind::LTE,
@@ -622,7 +658,7 @@ mod tests {
             Token {
                 span: TokenSpan {
                     line: 1,
-                    column: 38,
+                    column: 42,
                     length: 2,
                 },
                 kind: TokenKind::GTE,
