@@ -1,3 +1,9 @@
+## 0.0.10 (2024-05-03)
+
+### Features
+
+#### replace null with undefined for expressions without value (#73)
+
 ## 0.0.9 (2024-05-03)
 
 ### Features
