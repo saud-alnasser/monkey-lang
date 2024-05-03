@@ -39,6 +39,7 @@ pub enum TokenKind {
 
     // literals
     INT,
+    STRING,
 
     // keywords & identifiers
     LET,
@@ -102,6 +103,18 @@ pub struct IntExpression {
 }
 
 impl Display for IntExpression {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.value)
+    }
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub struct StringExpression {
+    pub token: Token,
+    pub value: Box<str>,
+}
+
+impl Display for StringExpression {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.value)
     }
@@ -228,6 +241,7 @@ impl Display for InfixExpression {
 pub enum Expression {
     IDENT(IdentExpression),
     INT(IntExpression),
+    STRING(StringExpression),
     BOOLEAN(BooleanExpression),
     IF(IfExpression),
     FUNCTION(FunctionExpression),
@@ -241,6 +255,7 @@ impl Display for Expression {
         match self {
             Expression::IDENT(expression) => write!(f, "{}", expression),
             Expression::INT(expression) => write!(f, "{}", expression),
+            Expression::STRING(expression) => write!(f, "{}", expression),
             Expression::BOOLEAN(expression) => write!(f, "{}", expression),
             Expression::IF(expression) => write!(f, "{}", expression),
             Expression::FUNCTION(expression) => write!(f, "{}", expression),
