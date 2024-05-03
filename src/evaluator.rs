@@ -1,7 +1,7 @@
 use std::{cell::RefCell, error::Error, fmt::Display, rc::Rc};
 
 use crate::{
-    BlockStatement, Environment, Expression, IdentExpression, Statement, Token, TokenKind,
+    BlockStatement, Environment, Expression, IdentExpression, Program, Statement, Token, TokenKind,
 };
 
 #[derive(Debug, PartialEq, Clone)]
@@ -166,12 +166,14 @@ impl Evaluator {
                     };
 
                 match condition {
-                    true => Ok(Evaluator::eval(
+                    true => Ok(Evaluator::eval_statement(
                         Statement::Block(expression.consequence),
                         Rc::clone(&env),
                     )?),
                     false => match expression.alternative {
-                        Some(statement) => Ok(Evaluator::eval(Statement::Block(statement), env)?),
+                        Some(statement) => {
+                            Ok(Evaluator::eval_statement(Statement::Block(statement), env)?)
+                        }
                         None => Ok(DataType::NULL),
                     },
                 }
@@ -213,7 +215,7 @@ impl Evaluator {
                             .set(&parameter.value, argument.clone());
                     }
 
-                    return Evaluator::eval(Statement::Block(body), extended_env);
+                    return Evaluator::eval_statement(Statement::Block(body), extended_env);
                 }
 
                 Err(Box::new(EvaluationError::UnknownOperator(expression.token)))
@@ -221,7 +223,7 @@ impl Evaluator {
         }
     }
 
-    pub fn eval(
+    fn eval_statement(
         statement: Statement,
         env: Rc<RefCell<Environment>>,
     ) -> Result<DataType, Box<dyn Error>> {
@@ -230,7 +232,7 @@ impl Evaluator {
                 let mut result = DataType::NULL;
 
                 for statement in block.statements {
-                    result = Evaluator::eval(statement, Rc::clone(&env))?;
+                    result = Evaluator::eval_statement(statement, Rc::clone(&env))?;
 
                     if let DataType::RETURN(_) = result {
                         return Ok(result);
@@ -252,6 +254,23 @@ impl Evaluator {
                 Evaluator::eval_expression(statement.expression, Rc::clone(&env))
             }
         }
+    }
+
+    pub fn execute(
+        program: Program,
+        env: Rc<RefCell<Environment>>,
+    ) -> Result<DataType, Box<dyn Error>> {
+        let mut result = DataType::NULL;
+
+        for statement in program.statements {
+            result = Evaluator::eval_statement(statement, Rc::clone(&env))?;
+
+            if let DataType::RETURN(_) = result {
+                return Ok(result);
+            }
+        }
+
+        Ok(result)
     }
 }
 
@@ -284,15 +303,13 @@ mod tests {
         for (input, expected) in tests {
             let lexer = Lexer::new(input);
             let mut parser = Parser::new(lexer);
-            let program = parser.parse().unwrap();
 
+            let program = parser.parse().unwrap();
             let env = Rc::new(RefCell::new(Environment::new(None)));
 
-            for statement in program.statements {
-                match Evaluator::eval(statement, Rc::clone(&env)) {
-                    Ok(DataType::INT(value)) => assert_eq!(value, expected),
-                    _ => panic!("expected an integer, got something else"),
-                }
+            match Evaluator::execute(program, env) {
+                Ok(DataType::INT(value)) => assert_eq!(value, expected),
+                _ => panic!("expected an integer, got something else"),
             }
         }
     }
@@ -304,15 +321,13 @@ mod tests {
         for (input, expected) in tests {
             let lexer = Lexer::new(input);
             let mut parser = Parser::new(lexer);
-            let program = parser.parse().unwrap();
 
+            let program = parser.parse().unwrap();
             let env = Rc::new(RefCell::new(Environment::new(None)));
 
-            for statement in program.statements {
-                match Evaluator::eval(statement, Rc::clone(&env)) {
-                    Ok(DataType::STRING(value)) => assert_eq!(value, expected.into()),
-                    _ => panic!("expected a string, got something else"),
-                }
+            match Evaluator::execute(program, env) {
+                Ok(DataType::STRING(value)) => assert_eq!(value, expected.into()),
+                _ => panic!("expected a string, got something else"),
             }
         }
     }
@@ -360,15 +375,13 @@ mod tests {
         for (input, expected) in tests {
             let lexer = Lexer::new(input);
             let mut parser = Parser::new(lexer);
-            let program = parser.parse().unwrap();
 
+            let program = parser.parse().unwrap();
             let env = Rc::new(RefCell::new(Environment::new(None)));
 
-            for statement in program.statements {
-                match Evaluator::eval(statement, Rc::clone(&env)) {
-                    Ok(DataType::BOOLEAN(value)) => assert_eq!(value, expected),
-                    _ => panic!("expected a boolean, got something else"),
-                }
+            match Evaluator::execute(program, env) {
+                Ok(DataType::BOOLEAN(value)) => assert_eq!(value, expected),
+                _ => panic!("expected a boolean, got something else"),
             }
         }
     }
@@ -388,16 +401,14 @@ mod tests {
         for (input, expected) in tests {
             let lexer = Lexer::new(input);
             let mut parser = Parser::new(lexer);
-            let program = parser.parse().unwrap();
 
+            let program = parser.parse().unwrap();
             let env = Rc::new(RefCell::new(Environment::new(None)));
 
-            for statement in program.statements {
-                match Evaluator::eval(statement, Rc::clone(&env)) {
-                    Ok(DataType::INT(value)) => assert_eq!(value, expected),
-                    Ok(DataType::NULL) => assert_eq!(expected, 0),
-                    _ => panic!("expected an integer, got something else"),
-                }
+            match Evaluator::execute(program, env) {
+                Ok(DataType::INT(value)) => assert_eq!(value, expected),
+                Ok(DataType::NULL) => assert_eq!(expected, 0),
+                _ => panic!("expected an integer, got something else"),
             }
         }
     }
@@ -424,17 +435,16 @@ mod tests {
         for (input, expected) in tests {
             let lexer = Lexer::new(input);
             let mut parser = Parser::new(lexer);
-            let program = parser.parse().unwrap();
 
+            let program = parser.parse().unwrap();
             let env = Rc::new(RefCell::new(Environment::new(None)));
 
-            for statement in program.statements {
-                if let Ok(DataType::RETURN(value)) = Evaluator::eval(statement, Rc::clone(&env)) {
-                    match *value {
-                        DataType::INT(value) => assert_eq!(value, expected),
-                        _ => panic!("expected an integer, got something else"),
-                    }
-                }
+            match Evaluator::execute(program, env) {
+                Ok(DataType::RETURN(value)) => match *value {
+                    DataType::INT(value) => assert_eq!(value, expected),
+                    _ => panic!("expected an integer, got something else"),
+                },
+                _ => panic!("expected a return statement, got something else"),
             }
         }
     }
@@ -466,14 +476,13 @@ mod tests {
         for (input, expected) in tests {
             let lexer = Lexer::new(input);
             let mut parser = Parser::new(lexer);
-            let program = parser.parse().unwrap();
 
+            let program = parser.parse().unwrap();
             let env = Rc::new(RefCell::new(Environment::new(None)));
 
-            for statement in program.statements {
-                if let Err(error) = Evaluator::eval(statement, Rc::clone(&env)) {
-                    assert_eq!(error.to_string(), expected);
-                }
+            match Evaluator::execute(program, env) {
+                Err(error) => assert_eq!(error.to_string(), expected),
+                _ => panic!("expected an error, got something else"),
             }
         }
     }
@@ -490,14 +499,13 @@ mod tests {
         for (input, expected) in tests {
             let lexer = Lexer::new(input);
             let mut parser = Parser::new(lexer);
-            let program = parser.parse().unwrap();
 
+            let program = parser.parse().unwrap();
             let env = Rc::new(RefCell::new(Environment::new(None)));
 
-            for statement in program.statements {
-                if let Ok(DataType::INT(value)) = Evaluator::eval(statement, Rc::clone(&env)) {
-                    assert_eq!(value, expected);
-                }
+            match Evaluator::execute(program, env) {
+                Ok(DataType::INT(value)) => assert_eq!(value, expected),
+                _ => panic!("expected an integer, got something else"),
             }
         }
     }
@@ -508,12 +516,11 @@ mod tests {
 
         let lexer = Lexer::new(input);
         let mut parser = Parser::new(lexer);
+
         let program = parser.parse().unwrap();
-
         let env = Rc::new(RefCell::new(Environment::new(None)));
-        let statement = program.statements.first().unwrap().clone();
 
-        match Evaluator::eval(statement, env) {
+        match Evaluator::execute(program, env) {
             Ok(DataType::FUNCTION {
                 parameters, body, ..
             }) => {
@@ -541,14 +548,17 @@ mod tests {
         for (input, expected) in tests {
             let lexer = Lexer::new(input);
             let mut parser = Parser::new(lexer);
-            let program = parser.parse().unwrap();
 
+            let program = parser.parse().unwrap();
             let env = Rc::new(RefCell::new(Environment::new(None)));
 
-            for statement in program.statements {
-                if let Ok(DataType::INT(value)) = Evaluator::eval(statement, Rc::clone(&env)) {
-                    assert_eq!(value, expected);
-                }
+            match Evaluator::execute(program, env) {
+                Ok(DataType::INT(value)) => assert_eq!(value, expected),
+                Ok(DataType::RETURN(value)) => match *value {
+                    DataType::INT(value) => assert_eq!(value, expected),
+                    _ => panic!("expected an integer, got something else"),
+                },
+                _ => panic!("expected an integer, got something else"),
             }
         }
     }
@@ -560,14 +570,13 @@ mod tests {
 
         let lexer = Lexer::new(input);
         let mut parser = Parser::new(lexer);
-        let program = parser.parse().unwrap();
 
+        let program = parser.parse().unwrap();
         let env = Rc::new(RefCell::new(Environment::new(None)));
 
-        for statement in program.statements {
-            if let Ok(DataType::INT(value)) = Evaluator::eval(statement, Rc::clone(&env)) {
-                assert_eq!(value, 4);
-            }
+        match Evaluator::execute(program, env) {
+            Ok(DataType::INT(value)) => assert_eq!(value, 4),
+            _ => panic!("expected an integer, got something else"),
         }
     }
 }
