@@ -808,4 +808,53 @@ mod tests {
             }
         }
     }
+
+    #[test]
+    fn test_eval_builtin_last_function() {
+        let tests = vec![
+            ("last([2, 2, 3]);", 3),
+            ("last([]);", 0),
+            ("last([3]);", 3),
+            ("last([5, 2]);", 2),
+            ("last([1, 2, 3, 4]);", 4),
+        ];
+
+        for (input, expected) in tests {
+            let lexer = Lexer::new(input);
+            let mut parser = Parser::new(lexer);
+
+            let program = parser.parse().unwrap();
+            let env = Rc::new(RefCell::new(Environment::new(None)));
+
+            match Evaluator::execute(program, env) {
+                Ok(DataType::INT(value)) => assert_eq!(value, expected),
+                Ok(DataType::NULL) => assert_eq!(0, expected),
+                _ => panic!("expected an integer, got something else"),
+            }
+        }
+
+        let test_errors = vec![
+            (
+                "last(1);",
+                r#"argument passed to BUILTIN("last") is not supported. got=INT(1), want=ARRAY"#,
+            ),
+            (
+                r#"last([1], [2]);"#,
+                r#"extra arguments are passed to BUILTIN("last"). got=2, want=1"#,
+            ),
+        ];
+
+        for (input, expected) in test_errors {
+            let lexer = Lexer::new(input);
+            let mut parser = Parser::new(lexer);
+
+            let program = parser.parse().unwrap();
+            let env = Rc::new(RefCell::new(Environment::new(None)));
+
+            match Evaluator::execute(program, env) {
+                Err(error) => assert_eq!(error.to_string(), expected),
+                _ => panic!("expected an error, got something else"),
+            }
+        }
+    }
 }
