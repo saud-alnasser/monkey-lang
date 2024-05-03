@@ -1,4 +1,5 @@
 mod ast;
+mod builtins;
 mod environment;
 mod evaluator;
 mod lexer;
@@ -7,6 +8,7 @@ mod repl;
 mod utils;
 
 pub use ast::*;
+pub use builtins::*;
 pub use environment::*;
 pub use evaluator::*;
 pub use lexer::*;

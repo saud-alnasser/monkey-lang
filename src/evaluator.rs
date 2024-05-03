@@ -9,6 +9,7 @@ pub enum DataType {
     INT(i64),
     STRING(Box<str>),
     BOOLEAN(bool),
+    ARRAY(Vec<DataType>),
     RETURN(Box<DataType>),
     IDENT(Box<str>),
     FUNCTION {
@@ -28,6 +29,15 @@ impl Display for DataType {
             DataType::INT(value) => write!(f, "{}", value),
             DataType::STRING(value) => write!(f, "{}", value),
             DataType::BOOLEAN(value) => write!(f, "{}", value),
+            DataType::ARRAY(value) => write!(
+                f,
+                "[{}]",
+                value
+                    .iter()
+                    .map(|element| element.to_string())
+                    .collect::<Vec<String>>()
+                    .join(", ")
+            ),
             DataType::RETURN(value) => write!(f, "{}", value),
             DataType::IDENT(value) => write!(f, "{}", value),
             DataType::FUNCTION { .. } => write!(f, ""),
@@ -104,6 +114,18 @@ impl Evaluator {
             }
             Expression::BOOLEAN(expression) => {
                 return Ok(DataType::BOOLEAN(expression.value));
+            }
+            Expression::ARRAY(expression) => {
+                let elements = expression
+                    .elements
+                    .iter()
+                    .map(|element| {
+                        Evaluator::eval_expression(element.clone(), Rc::clone(&env))
+                            .expect("failed to evaluate array element")
+                    })
+                    .collect::<Vec<DataType>>();
+
+                return Ok(DataType::ARRAY(elements));
             }
             Expression::PREFIX(expression) => {
                 let right = Evaluator::eval_expression(*expression.right, Rc::clone(&env))?;
@@ -423,6 +445,39 @@ mod tests {
     }
 
     #[test]
+    fn test_eval_array_expressions() {
+        let tests = vec![
+            ("[];", vec![]),
+            ("[1, 2, 3];", vec![1, 2, 3]),
+            ("[1 + 2, 3 * 4, 5 - 6];", vec![3, 12, -1]),
+        ];
+
+        for (input, expected) in tests {
+            let lexer = Lexer::new(input);
+            let mut parser = Parser::new(lexer);
+
+            let program = parser.parse().unwrap();
+            let env = Rc::new(RefCell::new(Environment::new(None)));
+
+            match Evaluator::execute(program, env) {
+                Ok(DataType::ARRAY(value)) => {
+                    assert_eq!(
+                        value
+                            .iter()
+                            .map(|element| match element {
+                                DataType::INT(value) => *value,
+                                _ => panic!("expected an integer, got something else"),
+                            })
+                            .collect::<Vec<i64>>(),
+                        expected
+                    );
+                }
+                _ => panic!("expected an array, got something else"),
+            }
+        }
+    }
+
+    #[test]
     fn test_eval_if_else_expressions() {
         let tests = vec![
             ("if (true) { 10; };", 10),
@@ -636,7 +691,7 @@ mod tests {
         let test_errors = vec![
             (
                 "len(1);",
-                r#"argument passed to BUILTIN("len") is not supported. got=INT(1), want=STRING(any)"#,
+                r#"argument passed to BUILTIN("len") is not supported. got=INT(1), want=STRING|ARRAY"#,
             ),
             (
                 r#"len("one", "two");"#,

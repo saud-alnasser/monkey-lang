@@ -1,6 +1,6 @@
 use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
-use crate::DataType;
+use crate::{builtins, DataType};
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct Environment {
@@ -15,29 +15,9 @@ impl Environment {
             outer: None,
         };
 
-        env.set(
-            "len",
-            DataType::BUILTIN {
-                func: |args| {
-                    if args.len() != 1 {
-                        return Err(format!(
-                            r#"extra arguments are passed to BUILTIN("len"). got={}, want=1"#,
-                            args.len()
-                        )
-                        .into());
-                    }
-
-                    match &args[0] {
-                        DataType::STRING(s) => Ok(DataType::INT(s.len() as i64)),
-                        _ => Err(format!(
-                            r#"argument passed to BUILTIN("len") is not supported. got={:?}, want=STRING(any)"#,
-                            args[0]
-                        )
-                        .into()),
-                    }
-                },
-            },
-        );
+        for (key, value) in builtins() {
+            env.set(key, value);
+        }
 
         env
     }

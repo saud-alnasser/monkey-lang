@@ -1,10 +1,10 @@
 use std::{error::Error, fmt::Display};
 
 use crate::{
-    BlockStatement, BooleanExpression, CallExpression, Expression, ExpressionStatement,
-    FunctionExpression, IdentExpression, IfExpression, InfixExpression, IntExpression,
-    LetStatement, Lexer, Precedence, PrefixExpression, Program, ReturnStatement, Statement,
-    StringExpression, Token, TokenKind,
+    ArrayExpression, BlockStatement, BooleanExpression, CallExpression, Expression,
+    ExpressionStatement, FunctionExpression, IdentExpression, IfExpression, InfixExpression,
+    IntExpression, LetStatement, Lexer, Precedence, PrefixExpression, Program, ReturnStatement,
+    Statement, StringExpression, Token, TokenKind,
 };
 
 #[derive(Debug)]
@@ -14,6 +14,7 @@ pub enum ParseError {
     MissingClosingParenthesis(Option<Token>),
     MissingOpeningBrace(Option<Token>),
     MissingClosingBrace(Option<Token>),
+    MissingClosingBracket(Option<Token>),
     MissingLetKeyword(Option<Token>),
     MissingAssignmentOperator(Option<Token>),
     MissingReturnKeyword(Option<Token>),
@@ -32,6 +33,7 @@ impl Error for ParseError {
             ParseError::MissingClosingParenthesis(_) => "missing closing parenthesis",
             ParseError::MissingOpeningBrace(_) => "missing opening brace",
             ParseError::MissingClosingBrace(_) => "missing closing brace",
+            ParseError::MissingClosingBracket(_) => "missing closing bracket",
             ParseError::MissingLetKeyword(_) => "missing let keyword",
             ParseError::MissingAssignmentOperator(_) => "missing assignment operator",
             ParseError::MissingReturnKeyword(_) => "missing return keyword",
@@ -79,6 +81,14 @@ impl Display for ParseError {
                     token.literal, token.span.line, token.span.column
                 ),
                 None => write!(f, "expected closing brace, got EOF"),
+            },
+            ParseError::MissingClosingBracket(token) => match token {
+                Some(token) => write!(
+                    f,
+                    "expected closing bracket, got {} at {}:{}",
+                    token.literal, token.span.line, token.span.column
+                ),
+                None => write!(f, "expected closing bracket, got EOF"),
             },
             ParseError::MissingLetKeyword(token) => match token {
                 Some(token) => write!(
@@ -249,6 +259,31 @@ impl<'a> Parser<'a> {
             Some(token) if token.kind == TokenKind::TRUE || token.kind == TokenKind::FALSE => {
                 let value = token.kind == TokenKind::TRUE;
                 Expression::BOOLEAN(BooleanExpression { token, value })
+            }
+            Some(token) if token.kind == TokenKind::LBRACKET => {
+                let mut elements = Vec::new();
+
+                while let Some(token) = lexer.peek() {
+                    if token.kind == TokenKind::RBRACKET {
+                        break;
+                    }
+
+                    elements.push(Parser::parse_expression(lexer, Precedence::LOWEST)?);
+
+                    match lexer.peek() {
+                        Some(token) if token.kind == TokenKind::COMMA => {
+                            lexer.next().unwrap();
+                        }
+                        _ => continue,
+                    }
+                }
+
+                match lexer.next() {
+                    Some(token) if token.kind == TokenKind::RBRACKET => {
+                        Expression::ARRAY(ArrayExpression { token, elements })
+                    }
+                    option => return Err(Box::new(ParseError::MissingClosingBracket(option))),
+                }
             }
             Some(token) if token.kind == TokenKind::IF => {
                 let condition = Box::new(Parser::parse_expression(lexer, Precedence::LOWEST)?);
@@ -780,6 +815,67 @@ mod tests {
                 },
                 _ => unreachable!(),
             }
+        }
+    }
+
+    #[test]
+    fn test_array_literal_expressions() {
+        let input = "[1, 2 * 2, 3 + 3];";
+
+        let lexer = Lexer::new(input);
+        let mut parser = Parser::new(lexer);
+        let program = parser.parse().unwrap();
+
+        assert_eq!(program.statements.len(), 1);
+
+        let statement = &program.statements[0];
+
+        match statement {
+            Statement::Expression(ExpressionStatement { expression, .. }) => match expression {
+                Expression::ARRAY(ArrayExpression { elements, .. }) => {
+                    assert_eq!(elements.len(), 3);
+
+                    if let Expression::INT(IntExpression { value, .. }) = &elements[0] {
+                        assert_eq!(*value, 1);
+                    } else {
+                        panic!("expected integer expression with value 1 in array[0]");
+                    }
+
+                    if let Expression::INFIX(InfixExpression { left, right, .. }) = &elements[1] {
+                        if let Expression::INT(IntExpression { value, .. }) = &**left {
+                            assert_eq!(*value, 2);
+                        } else {
+                            panic!("expected integer expression with value 2 in array[1]");
+                        }
+
+                        if let Expression::INT(IntExpression { value, .. }) = &**right {
+                            assert_eq!(*value, 2);
+                        } else {
+                            panic!("expected integer expression with value 2 in array[1]");
+                        }
+                    } else {
+                        panic!("expected infix expression with value 2 * 2 in array[1]");
+                    }
+
+                    if let Expression::INFIX(InfixExpression { left, right, .. }) = &elements[2] {
+                        if let Expression::INT(IntExpression { value, .. }) = &**left {
+                            assert_eq!(*value, 3);
+                        } else {
+                            panic!("expected integer expression with value 3 in array[2]");
+                        }
+
+                        if let Expression::INT(IntExpression { value, .. }) = &**right {
+                            assert_eq!(*value, 3);
+                        } else {
+                            panic!("expected integer expression with value 3 in array[2]");
+                        }
+                    } else {
+                        panic!("expected infix expression with value 3 + 3 in array[2]");
+                    }
+                }
+                _ => unreachable!(),
+            },
+            _ => unreachable!(),
         }
     }
 
