@@ -1,76 +1,15 @@
-mod quantifiers;
-mod utils;
-
+use crate::{Token, TokenKind};
 use std::{iter::Peekable, str::Chars};
 
-use crate::{Token, TokenKind, TokenSpan};
-
-#[derive(Debug)]
-pub struct SpanTracker {
-    line: usize,
-    column_start: usize,
-    column_end: usize,
-}
-
-impl SpanTracker {
-    pub fn new() -> Self {
-        Self {
-            line: 1,
-            column_start: 0,
-            column_end: 0,
-        }
-    }
-
-    pub fn advance(&mut self, literal: &str) {
-        let mut chars = literal.chars().peekable();
-
-        if chars.peek().is_some() {
-            self.column_start = self.column_end + 1;
-        }
-
-        while let Some(c) = chars.next() {
-            match c {
-                '\n' => {
-                    self.line += 1;
-                    self.column_start = 0;
-                    self.column_end = 0;
-                }
-                _ => {
-                    self.column_end += 1;
-                }
-            }
-        }
-    }
-
-    pub fn capture(&self) -> TokenSpan {
-        let line = self.line;
-
-        let column = match self.column_start {
-            0 => 1,
-            _ => self.column_start,
-        };
-
-        let length = match self.column_end >= self.column_start {
-            true => self.column_end - self.column_start + 1,
-            false => 0,
-        };
-
-        TokenSpan {
-            line,
-            column,
-            length,
-        }
-    }
-}
-
-pub trait LexerQuantifier {
-    fn consume(&mut self, chars: &mut Peekable<Chars>, span: &mut SpanTracker) -> Option<Token>;
-}
+use self::{
+    rules::{Rule, RULES},
+    utils::SpanTracker,
+};
 
 pub struct Lexer<'a> {
     chars: Peekable<Chars<'a>>,
     span: SpanTracker,
-    quantifiers: Vec<Box<dyn LexerQuantifier>>,
+    rules: Vec<Rule>,
     peeked: Option<Token>,
     exhausted: bool,
 }
@@ -80,15 +19,7 @@ impl Lexer<'_> {
         Lexer {
             chars: input.trim_start().chars().peekable(),
             span: SpanTracker::new(),
-            quantifiers: vec![
-                Box::new(quantifiers::WhitespaceQuantifier),
-                Box::new(quantifiers::OperatorsQuantifier),
-                Box::new(quantifiers::DelimitersQuantifier),
-                Box::new(quantifiers::BracketsQuantifier),
-                Box::new(quantifiers::StringsQuantifier),
-                Box::new(quantifiers::IntegersQuantifier),
-                Box::new(quantifiers::KeywordsAndIdentifiersQuantifier),
-            ],
+            rules: RULES.to_vec(),
             peeked: None,
             exhausted: false,
         }
@@ -99,8 +30,8 @@ impl Lexer<'_> {
             return None;
         }
 
-        for quantifier in &mut self.quantifiers {
-            if let Some(token) = quantifier.consume(&mut self.chars, &mut self.span) {
+        for rule in &self.rules {
+            if let Some(token) = (rule.consume)(&mut self.chars, &mut self.span) {
                 return Some(token);
             }
         }
@@ -149,653 +80,1770 @@ impl Iterator for Lexer<'_> {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+mod rules {
+    use std::{iter::Peekable, str::Chars};
 
-    #[test]
-    fn test_symbols() {
-        let input = "= + ( ) { } [ ] , ; ! - / * < > == != <= >=";
+    use super::utils::{self, SpanTracker};
+    use crate::{Token, TokenKind};
 
-        let tokens = vec![
-            Token {
-                span: TokenSpan {
+    #[derive(Debug, PartialEq, Clone)]
+    pub struct Rule {
+        pub kind: TokenKind,
+        pub consume: fn(&mut Peekable<Chars>, &mut SpanTracker) -> Option<Token>,
+    }
+
+    // order matters
+    // should be from most specific (more symbols) to least specific (less symbols)
+    // with taking in account of the type of token.
+    pub const RULES: [Rule; 28] = [
+        // whitespace
+        WHITESPACE_RULE,
+        // operators with more than one symbol
+        EQ_OPERATOR_RULE,
+        NEQ_OPERATOR_RULE,
+        LTE_OPERATOR_RULE,
+        GTE_OPERATOR_RULE,
+        // operators with one symbol
+        ASSIGN_OPERATOR_RULE,
+        PLUS_OPERATOR_RULE,
+        MINUS_OPERATOR_RULE,
+        ASTERISK_OPERATOR_RULE,
+        SLASH_OPERATOR_RULE,
+        BANG_OPERATOR_RULE,
+        GT_OPERATOR_RULE,
+        LT_OPERATOR_RULE,
+        // delimiters
+        COMMA_DELIMITER_RULE,
+        SEMICOLON_DELIMITER_RULE,
+        // grouping
+        PARENTHESES_RULE,
+        BRACES_RULE,
+        BRACKETS_RULE,
+        // literals
+        STRINGS_RULE,
+        INTEGERS_RULE,
+        // keywords
+        LET_KEYWORD_RULE,
+        FUNCTION_KEYWORD_RULE,
+        RETURN_KEYWORD_RULE,
+        IF_KEYWORD_RULE,
+        ELSE_KEYWORD_RULE,
+        TRUE_KEYWORD_RULE,
+        FALSE_KEYWORD_RULE,
+        // identifier
+        IDENTIFIER_RULE,
+    ];
+
+    const WHITESPACE_RULE: Rule = Rule {
+        kind: TokenKind::WHITESPACE,
+        consume: |chars, span| {
+            if let Some(whitespace) = utils::take_series_where(chars, |c| c.is_whitespace()) {
+                span.advance(&whitespace);
+            }
+
+            None
+        },
+    };
+
+    #[cfg(test)]
+    mod whitespace_tests {
+        use super::*;
+        use crate::TokenSpan;
+
+        #[test]
+        fn consume_whitespace() {
+            let mut chars = "  \t\n".chars().peekable();
+            let mut span = SpanTracker::new();
+
+            (WHITESPACE_RULE.consume)(&mut chars, &mut span);
+
+            assert_eq!(
+                span.capture(),
+                TokenSpan {
+                    line: 2,
+                    column: 1,
+                    length: 1
+                }
+            );
+        }
+
+        #[test]
+        fn consume_no_whitespace() {
+            let mut chars = "abc".chars().peekable();
+            let mut span = SpanTracker::new();
+
+            (WHITESPACE_RULE.consume)(&mut chars, &mut span);
+
+            assert_eq!(
+                span.capture(),
+                TokenSpan {
                     line: 1,
                     column: 1,
-                    length: 1,
-                },
-                kind: TokenKind::ASSIGN,
-                literal: "=".into(),
-            },
-            Token {
-                span: TokenSpan {
-                    line: 1,
-                    column: 3,
-                    length: 1,
-                },
-                kind: TokenKind::PLUS,
-                literal: "+".into(),
-            },
-            Token {
-                span: TokenSpan {
-                    line: 1,
-                    column: 5,
-                    length: 1,
-                },
-                kind: TokenKind::LPAREN,
-                literal: "(".into(),
-            },
-            Token {
-                span: TokenSpan {
-                    line: 1,
-                    column: 7,
-                    length: 1,
-                },
-                kind: TokenKind::RPAREN,
-                literal: ")".into(),
-            },
-            Token {
-                span: TokenSpan {
-                    line: 1,
-                    column: 9,
-                    length: 1,
-                },
-                kind: TokenKind::LBRACE,
-                literal: "{".into(),
-            },
-            Token {
-                span: TokenSpan {
-                    line: 1,
-                    column: 11,
-                    length: 1,
-                },
-                kind: TokenKind::RBRACE,
-                literal: "}".into(),
-            },
-            Token {
-                span: TokenSpan {
-                    line: 1,
-                    column: 13,
-                    length: 1,
-                },
-                kind: TokenKind::LBRACKET,
-                literal: "[".into(),
-            },
-            Token {
-                span: TokenSpan {
-                    line: 1,
-                    column: 15,
-                    length: 1,
-                },
-                kind: TokenKind::RBRACKET,
-                literal: "]".into(),
-            },
-            Token {
-                span: TokenSpan {
-                    line: 1,
-                    column: 17,
-                    length: 1,
-                },
-                kind: TokenKind::COMMA,
-                literal: ",".into(),
-            },
-            Token {
-                span: TokenSpan {
-                    line: 1,
-                    column: 19,
-                    length: 1,
-                },
-                kind: TokenKind::SEMICOLON,
-                literal: ";".into(),
-            },
-            Token {
-                span: TokenSpan {
-                    line: 1,
-                    column: 21,
-                    length: 1,
-                },
-                kind: TokenKind::BANG,
-                literal: "!".into(),
-            },
-            Token {
-                span: TokenSpan {
-                    line: 1,
-                    column: 23,
-                    length: 1,
-                },
-                kind: TokenKind::MINUS,
-                literal: "-".into(),
-            },
-            Token {
-                span: TokenSpan {
-                    line: 1,
-                    column: 25,
-                    length: 1,
-                },
-                kind: TokenKind::SLASH,
-                literal: "/".into(),
-            },
-            Token {
-                span: TokenSpan {
-                    line: 1,
-                    column: 27,
-                    length: 1,
-                },
-                kind: TokenKind::ASTERISK,
-                literal: "*".into(),
-            },
-            Token {
-                span: TokenSpan {
-                    line: 1,
-                    column: 29,
-                    length: 1,
-                },
-                kind: TokenKind::LT,
-                literal: "<".into(),
-            },
-            Token {
-                span: TokenSpan {
-                    line: 1,
-                    column: 31,
-                    length: 1,
-                },
-                kind: TokenKind::GT,
-                literal: ">".into(),
-            },
-            Token {
-                span: TokenSpan {
-                    line: 1,
-                    column: 33,
-                    length: 2,
-                },
-                kind: TokenKind::EQ,
-                literal: "==".into(),
-            },
-            Token {
-                span: TokenSpan {
-                    line: 1,
-                    column: 36,
-                    length: 2,
-                },
-                kind: TokenKind::NEQ,
-                literal: "!=".into(),
-            },
-            Token {
-                span: TokenSpan {
-                    line: 1,
-                    column: 39,
-                    length: 2,
-                },
-                kind: TokenKind::LTE,
-                literal: "<=".into(),
-            },
-            Token {
-                span: TokenSpan {
-                    line: 1,
-                    column: 42,
-                    length: 2,
-                },
-                kind: TokenKind::GTE,
-                literal: ">=".into(),
-            },
-        ];
-
-        let mut lexer = Lexer::new(input);
-
-        for expected in tokens {
-            let actual = lexer.next().unwrap();
-            assert_eq!(actual, expected);
+                    length: 1
+                }
+            );
         }
     }
 
-    #[test]
-    fn test_let_statement() {
-        let input = "let five = 5;";
+    const ASSIGN_OPERATOR_RULE: Rule = Rule {
+        kind: TokenKind::ASSIGN,
+        consume: |chars, span| {
+            if let '=' = chars.peek()? {
+                chars.next();
+                span.advance("=");
 
-        let tokens = vec![
-            Token {
-                span: TokenSpan {
+                return Some(Token {
+                    span: span.capture(),
+                    kind: TokenKind::ASSIGN,
+                    literal: "=".into(),
+                });
+            }
+
+            None
+        },
+    };
+
+    #[cfg(test)]
+    mod assign_operator_tests {
+        use super::*;
+        use crate::TokenSpan;
+
+        #[test]
+        fn consume_assign_operator() {
+            let mut chars = "=".chars().peekable();
+            let mut span = SpanTracker::new();
+
+            let token = (ASSIGN_OPERATOR_RULE.consume)(&mut chars, &mut span).unwrap();
+
+            assert_eq!(
+                token.span,
+                TokenSpan {
                     line: 1,
                     column: 1,
-                    length: 3,
-                },
-                kind: TokenKind::LET,
-                literal: "let".into(),
-            },
-            Token {
-                span: TokenSpan {
-                    line: 1,
-                    column: 5,
-                    length: 4,
-                },
-                kind: TokenKind::IDENT,
-                literal: "five".into(),
-            },
-            Token {
-                span: TokenSpan {
-                    line: 1,
-                    column: 10,
-                    length: 1,
-                },
-                kind: TokenKind::ASSIGN,
-                literal: "=".into(),
-            },
-            Token {
-                span: TokenSpan {
-                    line: 1,
-                    column: 12,
-                    length: 1,
-                },
-                kind: TokenKind::INT,
-                literal: "5".into(),
-            },
-            Token {
-                span: TokenSpan {
-                    line: 1,
-                    column: 13,
-                    length: 1,
-                },
-                kind: TokenKind::SEMICOLON,
-                literal: ";".into(),
-            },
-        ];
+                    length: 1
+                }
+            );
+            assert_eq!(token.kind, TokenKind::ASSIGN);
+            assert_eq!(token.literal, "=".into());
+        }
 
-        let mut lexer = Lexer::new(input);
+        #[test]
+        fn consume_no_assign_operator() {
+            let mut chars = "+".chars().peekable();
+            let mut span = SpanTracker::new();
 
-        for expected in tokens {
-            let actual = lexer.next().unwrap();
+            let token = (ASSIGN_OPERATOR_RULE.consume)(&mut chars, &mut span);
 
-            assert_eq!(actual, expected);
+            assert_eq!(token, None);
         }
     }
 
-    #[test]
-    fn test_function_statement() {
-        let input = "let add = fn(x, y) { x + y; };\nadd(5, 10);";
+    const PLUS_OPERATOR_RULE: Rule = Rule {
+        kind: TokenKind::PLUS,
+        consume: |chars, span| {
+            if let '+' = chars.peek()? {
+                chars.next();
+                span.advance("+");
 
-        let tokens = vec![
-            Token {
-                span: TokenSpan {
+                return Some(Token {
+                    span: span.capture(),
+                    kind: TokenKind::PLUS,
+                    literal: "+".into(),
+                });
+            }
+
+            None
+        },
+    };
+
+    #[cfg(test)]
+    mod plus_operator_tests {
+        use super::*;
+        use crate::TokenSpan;
+
+        #[test]
+        fn consume_plus() {
+            let mut chars = "+".chars().peekable();
+            let mut span = SpanTracker::new();
+
+            let token = (PLUS_OPERATOR_RULE.consume)(&mut chars, &mut span).unwrap();
+
+            assert_eq!(
+                token.span,
+                TokenSpan {
                     line: 1,
                     column: 1,
-                    length: 3,
-                },
-                kind: TokenKind::LET,
-                literal: "let".into(),
-            },
-            Token {
-                span: TokenSpan {
-                    line: 1,
-                    column: 5,
-                    length: 3,
-                },
-                kind: TokenKind::IDENT,
-                literal: "add".into(),
-            },
-            Token {
-                span: TokenSpan {
-                    line: 1,
-                    column: 9,
-                    length: 1,
-                },
-                kind: TokenKind::ASSIGN,
-                literal: "=".into(),
-            },
-            Token {
-                span: TokenSpan {
-                    line: 1,
-                    column: 11,
-                    length: 2,
-                },
-                kind: TokenKind::FUNCTION,
-                literal: "fn".into(),
-            },
-            Token {
-                span: TokenSpan {
-                    line: 1,
-                    column: 13,
-                    length: 1,
-                },
-                kind: TokenKind::LPAREN,
-                literal: "(".into(),
-            },
-            Token {
-                span: TokenSpan {
-                    line: 1,
-                    column: 14,
-                    length: 1,
-                },
-                kind: TokenKind::IDENT,
-                literal: "x".into(),
-            },
-            Token {
-                span: TokenSpan {
-                    line: 1,
-                    column: 15,
-                    length: 1,
-                },
-                kind: TokenKind::COMMA,
-                literal: ",".into(),
-            },
-            Token {
-                span: TokenSpan {
-                    line: 1,
-                    column: 17,
-                    length: 1,
-                },
-                kind: TokenKind::IDENT,
-                literal: "y".into(),
-            },
-            Token {
-                span: TokenSpan {
-                    line: 1,
-                    column: 18,
-                    length: 1,
-                },
-                kind: TokenKind::RPAREN,
-                literal: ")".into(),
-            },
-            Token {
-                span: TokenSpan {
-                    line: 1,
-                    column: 20,
-                    length: 1,
-                },
-                kind: TokenKind::LBRACE,
-                literal: "{".into(),
-            },
-            Token {
-                span: TokenSpan {
-                    line: 1,
-                    column: 22,
-                    length: 1,
-                },
-                kind: TokenKind::IDENT,
-                literal: "x".into(),
-            },
-            Token {
-                span: TokenSpan {
-                    line: 1,
-                    column: 24,
-                    length: 1,
-                },
-                kind: TokenKind::PLUS,
-                literal: "+".into(),
-            },
-            Token {
-                span: TokenSpan {
-                    line: 1,
-                    column: 26,
-                    length: 1,
-                },
-                kind: TokenKind::IDENT,
-                literal: "y".into(),
-            },
-            Token {
-                span: TokenSpan {
-                    line: 1,
-                    column: 27,
-                    length: 1,
-                },
-                kind: TokenKind::SEMICOLON,
-                literal: ";".into(),
-            },
-            Token {
-                span: TokenSpan {
-                    line: 1,
-                    column: 29,
-                    length: 1,
-                },
-                kind: TokenKind::RBRACE,
-                literal: "}".into(),
-            },
-            Token {
-                span: TokenSpan {
-                    line: 1,
-                    column: 30,
-                    length: 1,
-                },
-                kind: TokenKind::SEMICOLON,
-                literal: ";".into(),
-            },
-            Token {
-                span: TokenSpan {
-                    line: 2,
-                    column: 1,
-                    length: 3,
-                },
-                kind: TokenKind::IDENT,
-                literal: "add".into(),
-            },
-            Token {
-                span: TokenSpan {
-                    line: 2,
-                    column: 4,
-                    length: 1,
-                },
-                kind: TokenKind::LPAREN,
-                literal: "(".into(),
-            },
-            Token {
-                span: TokenSpan {
-                    line: 2,
-                    column: 5,
-                    length: 1,
-                },
-                kind: TokenKind::INT,
-                literal: "5".into(),
-            },
-            Token {
-                span: TokenSpan {
-                    line: 2,
-                    column: 6,
-                    length: 1,
-                },
-                kind: TokenKind::COMMA,
-                literal: ",".into(),
-            },
-            Token {
-                span: TokenSpan {
-                    line: 2,
-                    column: 8,
-                    length: 2,
-                },
-                kind: TokenKind::INT,
-                literal: "10".into(),
-            },
-            Token {
-                span: TokenSpan {
-                    line: 2,
-                    column: 10,
-                    length: 1,
-                },
-                kind: TokenKind::RPAREN,
-                literal: ")".into(),
-            },
-            Token {
-                span: TokenSpan {
-                    line: 2,
-                    column: 11,
-                    length: 1,
-                },
-                kind: TokenKind::SEMICOLON,
-                literal: ";".into(),
-            },
-        ];
+                    length: 1
+                }
+            );
+            assert_eq!(token.kind, TokenKind::PLUS);
+            assert_eq!(token.literal, "+".into());
+        }
 
-        let mut lexer = Lexer::new(input);
+        #[test]
+        fn consume_no_plus() {
+            let mut chars = "=".chars().peekable();
+            let mut span = SpanTracker::new();
 
-        for expected in tokens {
-            let actual = lexer.next().unwrap();
-            assert_eq!(actual, expected);
+            let token = (PLUS_OPERATOR_RULE.consume)(&mut chars, &mut span);
+
+            assert_eq!(token, None);
         }
     }
 
-    #[test]
-    fn test_conditional_statement() {
-        let input = "if (5 < 10) { return true; } else { return false; }";
+    const MINUS_OPERATOR_RULE: Rule = Rule {
+        kind: TokenKind::MINUS,
+        consume: |chars, span| {
+            if let '-' = chars.peek()? {
+                chars.next();
+                span.advance("-");
 
-        let tokens = vec![
-            Token {
-                span: TokenSpan {
+                return Some(Token {
+                    span: span.capture(),
+                    kind: TokenKind::MINUS,
+                    literal: "-".into(),
+                });
+            }
+
+            None
+        },
+    };
+
+    #[cfg(test)]
+    mod minus_operator_tests {
+        use super::*;
+        use crate::TokenSpan;
+
+        #[test]
+        fn consume_minus() {
+            let mut chars = "-".chars().peekable();
+            let mut span = SpanTracker::new();
+
+            let token = (MINUS_OPERATOR_RULE.consume)(&mut chars, &mut span).unwrap();
+
+            assert_eq!(
+                token.span,
+                TokenSpan {
                     line: 1,
                     column: 1,
-                    length: 2,
-                },
-                kind: TokenKind::IF,
-                literal: "if".into(),
-            },
-            Token {
-                span: TokenSpan {
+                    length: 1
+                }
+            );
+            assert_eq!(token.kind, TokenKind::MINUS);
+            assert_eq!(token.literal, "-".into());
+        }
+
+        #[test]
+        fn consume_no_minus() {
+            let mut chars = "+".chars().peekable();
+            let mut span = SpanTracker::new();
+
+            let token = (MINUS_OPERATOR_RULE.consume)(&mut chars, &mut span);
+
+            assert_eq!(token, None);
+        }
+    }
+
+    const ASTERISK_OPERATOR_RULE: Rule = Rule {
+        kind: TokenKind::ASTERISK,
+        consume: |chars, span| {
+            if let '*' = chars.peek()? {
+                chars.next();
+                span.advance("*");
+
+                return Some(Token {
+                    span: span.capture(),
+                    kind: TokenKind::ASTERISK,
+                    literal: "*".into(),
+                });
+            }
+
+            None
+        },
+    };
+
+    #[cfg(test)]
+    mod asterisk_operator_tests {
+        use super::*;
+        use crate::TokenSpan;
+
+        #[test]
+        fn consume_asterisk() {
+            let mut chars = "*".chars().peekable();
+            let mut span = SpanTracker::new();
+
+            let token = (ASTERISK_OPERATOR_RULE.consume)(&mut chars, &mut span).unwrap();
+
+            assert_eq!(
+                token.span,
+                TokenSpan {
                     line: 1,
-                    column: 4,
-                    length: 1,
-                },
-                kind: TokenKind::LPAREN,
-                literal: "(".into(),
-            },
-            Token {
-                span: TokenSpan {
+                    column: 1,
+                    length: 1
+                }
+            );
+            assert_eq!(token.kind, TokenKind::ASTERISK);
+            assert_eq!(token.literal, "*".into());
+        }
+
+        #[test]
+        fn consume_no_asterisk() {
+            let mut chars = "+".chars().peekable();
+            let mut span = SpanTracker::new();
+
+            let token = (ASTERISK_OPERATOR_RULE.consume)(&mut chars, &mut span);
+
+            assert_eq!(token, None);
+        }
+    }
+
+    const SLASH_OPERATOR_RULE: Rule = Rule {
+        kind: TokenKind::SLASH,
+        consume: |chars, span| {
+            if let '/' = chars.peek()? {
+                chars.next();
+                span.advance("/");
+
+                return Some(Token {
+                    span: span.capture(),
+                    kind: TokenKind::SLASH,
+                    literal: "/".into(),
+                });
+            }
+
+            None
+        },
+    };
+
+    #[cfg(test)]
+    mod slash_operator_tests {
+        use super::*;
+        use crate::TokenSpan;
+
+        #[test]
+        fn consume_slash() {
+            let mut chars = "/".chars().peekable();
+            let mut span = SpanTracker::new();
+
+            let token = (SLASH_OPERATOR_RULE.consume)(&mut chars, &mut span).unwrap();
+
+            assert_eq!(
+                token.span,
+                TokenSpan {
                     line: 1,
-                    column: 5,
-                    length: 1,
-                },
-                kind: TokenKind::INT,
-                literal: "5".into(),
-            },
-            Token {
-                span: TokenSpan {
+                    column: 1,
+                    length: 1
+                }
+            );
+            assert_eq!(token.kind, TokenKind::SLASH);
+            assert_eq!(token.literal, "/".into());
+        }
+
+        #[test]
+        fn consume_no_slash() {
+            let mut chars = "+".chars().peekable();
+            let mut span = SpanTracker::new();
+
+            let token = (SLASH_OPERATOR_RULE.consume)(&mut chars, &mut span);
+
+            assert_eq!(token, None);
+        }
+    }
+
+    const BANG_OPERATOR_RULE: Rule = Rule {
+        kind: TokenKind::BANG,
+        consume: |chars, span| {
+            if let '!' = chars.peek()? {
+                chars.next();
+                span.advance("!");
+
+                return Some(Token {
+                    span: span.capture(),
+                    kind: TokenKind::BANG,
+                    literal: "!".into(),
+                });
+            }
+
+            None
+        },
+    };
+
+    #[cfg(test)]
+    mod bang_operator_tests {
+        use super::*;
+        use crate::TokenSpan;
+
+        #[test]
+        fn consume_bang() {
+            let mut chars = "!".chars().peekable();
+            let mut span = SpanTracker::new();
+
+            let token = (BANG_OPERATOR_RULE.consume)(&mut chars, &mut span).unwrap();
+
+            assert_eq!(
+                token.span,
+                TokenSpan {
                     line: 1,
-                    column: 7,
-                    length: 1,
-                },
-                kind: TokenKind::LT,
-                literal: "<".into(),
-            },
-            Token {
-                span: TokenSpan {
+                    column: 1,
+                    length: 1
+                }
+            );
+            assert_eq!(token.kind, TokenKind::BANG);
+            assert_eq!(token.literal, "!".into());
+        }
+
+        #[test]
+        fn consume_no_bang() {
+            let mut chars = "+".chars().peekable();
+            let mut span = SpanTracker::new();
+
+            let token = (BANG_OPERATOR_RULE.consume)(&mut chars, &mut span);
+
+            assert_eq!(token, None);
+        }
+    }
+
+    const GT_OPERATOR_RULE: Rule = Rule {
+        kind: TokenKind::GT,
+        consume: |chars, span| {
+            if let '>' = chars.peek()? {
+                chars.next();
+                span.advance(">");
+
+                return Some(Token {
+                    span: span.capture(),
+                    kind: TokenKind::GT,
+                    literal: ">".into(),
+                });
+            }
+
+            None
+        },
+    };
+
+    #[cfg(test)]
+    mod gt_operator_tests {
+        use super::*;
+        use crate::TokenSpan;
+
+        #[test]
+        fn consume_gt() {
+            let mut chars = ">".chars().peekable();
+            let mut span = SpanTracker::new();
+
+            let token = (GT_OPERATOR_RULE.consume)(&mut chars, &mut span).unwrap();
+
+            assert_eq!(
+                token.span,
+                TokenSpan {
                     line: 1,
-                    column: 9,
-                    length: 2,
-                },
-                kind: TokenKind::INT,
-                literal: "10".into(),
-            },
-            Token {
-                span: TokenSpan {
+                    column: 1,
+                    length: 1
+                }
+            );
+            assert_eq!(token.kind, TokenKind::GT);
+            assert_eq!(token.literal, ">".into());
+        }
+
+        #[test]
+        fn consume_no_gt() {
+            let mut chars = "+".chars().peekable();
+            let mut span = SpanTracker::new();
+
+            let token = (GT_OPERATOR_RULE.consume)(&mut chars, &mut span);
+
+            assert_eq!(token, None);
+        }
+    }
+
+    const LT_OPERATOR_RULE: Rule = Rule {
+        kind: TokenKind::LT,
+        consume: |chars, span| {
+            if let '<' = chars.peek()? {
+                chars.next();
+                span.advance("<");
+
+                return Some(Token {
+                    span: span.capture(),
+                    kind: TokenKind::LT,
+                    literal: "<".into(),
+                });
+            }
+
+            None
+        },
+    };
+
+    #[cfg(test)]
+    mod lt_operator_tests {
+        use super::*;
+        use crate::TokenSpan;
+
+        #[test]
+        fn consume_lt() {
+            let mut chars = "<".chars().peekable();
+            let mut span = SpanTracker::new();
+
+            let token = (LT_OPERATOR_RULE.consume)(&mut chars, &mut span).unwrap();
+
+            assert_eq!(
+                token.span,
+                TokenSpan {
                     line: 1,
-                    column: 11,
-                    length: 1,
-                },
-                kind: TokenKind::RPAREN,
-                literal: ")".into(),
-            },
-            Token {
-                span: TokenSpan {
+                    column: 1,
+                    length: 1
+                }
+            );
+            assert_eq!(token.kind, TokenKind::LT);
+            assert_eq!(token.literal, "<".into());
+        }
+
+        #[test]
+        fn consume_no_lt() {
+            let mut chars = "+".chars().peekable();
+            let mut span = SpanTracker::new();
+
+            let token = (LT_OPERATOR_RULE.consume)(&mut chars, &mut span);
+
+            assert_eq!(token, None);
+        }
+    }
+
+    const EQ_OPERATOR_RULE: Rule = Rule {
+        kind: TokenKind::EQ,
+        consume: |chars, span| {
+            if let '=' = chars.peek()? {
+                if let '=' = chars.clone().skip(1).next()? {
+                    chars.next();
+                    chars.next();
+
+                    span.advance("==");
+
+                    return Some(Token {
+                        span: span.capture(),
+                        kind: TokenKind::EQ,
+                        literal: "==".into(),
+                    });
+                }
+            }
+
+            None
+        },
+    };
+
+    #[cfg(test)]
+    mod eq_operator_tests {
+        use super::*;
+        use crate::TokenSpan;
+
+        #[test]
+        fn consume_eq() {
+            let mut chars = "==".chars().peekable();
+            let mut span = SpanTracker::new();
+
+            let token = (EQ_OPERATOR_RULE.consume)(&mut chars, &mut span).unwrap();
+
+            assert_eq!(
+                token.span,
+                TokenSpan {
                     line: 1,
-                    column: 13,
-                    length: 1,
-                },
-                kind: TokenKind::LBRACE,
-                literal: "{".into(),
-            },
-            Token {
-                span: TokenSpan {
+                    column: 1,
+                    length: 2
+                }
+            );
+            assert_eq!(token.kind, TokenKind::EQ);
+            assert_eq!(token.literal, "==".into());
+        }
+
+        #[test]
+        fn consume_no_eq() {
+            let mut chars = "+".chars().peekable();
+            let mut span = SpanTracker::new();
+
+            let token = (EQ_OPERATOR_RULE.consume)(&mut chars, &mut span);
+
+            assert_eq!(token, None);
+        }
+    }
+
+    const NEQ_OPERATOR_RULE: Rule = Rule {
+        kind: TokenKind::NEQ,
+        consume: |chars, span| {
+            if let '!' = chars.peek()? {
+                if let '=' = chars.clone().skip(1).next()? {
+                    chars.next();
+                    chars.next();
+
+                    span.advance("!=");
+
+                    return Some(Token {
+                        span: span.capture(),
+                        kind: TokenKind::NEQ,
+                        literal: "!=".into(),
+                    });
+                }
+            }
+
+            None
+        },
+    };
+
+    #[cfg(test)]
+    mod neq_operator_tests {
+        use super::*;
+        use crate::TokenSpan;
+
+        #[test]
+        fn consume_neq() {
+            let mut chars = "!=".chars().peekable();
+            let mut span = SpanTracker::new();
+
+            let token = (NEQ_OPERATOR_RULE.consume)(&mut chars, &mut span).unwrap();
+
+            assert_eq!(
+                token.span,
+                TokenSpan {
+                    line: 1,
+                    column: 1,
+                    length: 2
+                }
+            );
+            assert_eq!(token.kind, TokenKind::NEQ);
+            assert_eq!(token.literal, "!=".into());
+        }
+
+        #[test]
+        fn consume_no_neq() {
+            let mut chars = "+".chars().peekable();
+            let mut span = SpanTracker::new();
+
+            let token = (NEQ_OPERATOR_RULE.consume)(&mut chars, &mut span);
+
+            assert_eq!(token, None);
+        }
+    }
+
+    const LTE_OPERATOR_RULE: Rule = Rule {
+        kind: TokenKind::LTE,
+        consume: |chars, span| {
+            if let '<' = chars.peek()? {
+                if let '=' = chars.clone().skip(1).next()? {
+                    chars.next();
+                    chars.next();
+
+                    span.advance("<=");
+
+                    return Some(Token {
+                        span: span.capture(),
+                        kind: TokenKind::LTE,
+                        literal: "<=".into(),
+                    });
+                }
+            }
+
+            None
+        },
+    };
+
+    #[cfg(test)]
+    mod lte_operator_tests {
+        use super::*;
+        use crate::TokenSpan;
+
+        #[test]
+        fn consume_lte() {
+            let mut chars = "<=".chars().peekable();
+            let mut span = SpanTracker::new();
+
+            let token = (LTE_OPERATOR_RULE.consume)(&mut chars, &mut span).unwrap();
+
+            assert_eq!(
+                token.span,
+                TokenSpan {
+                    line: 1,
+                    column: 1,
+                    length: 2
+                }
+            );
+            assert_eq!(token.kind, TokenKind::LTE);
+            assert_eq!(token.literal, "<=".into());
+        }
+
+        #[test]
+        fn consume_no_lte() {
+            let mut chars = "+".chars().peekable();
+            let mut span = SpanTracker::new();
+
+            let token = (LTE_OPERATOR_RULE.consume)(&mut chars, &mut span);
+
+            assert_eq!(token, None);
+        }
+    }
+
+    const GTE_OPERATOR_RULE: Rule = Rule {
+        kind: TokenKind::GTE,
+        consume: |chars, span| {
+            if let '>' = chars.peek()? {
+                if let '=' = chars.clone().skip(1).next()? {
+                    chars.next();
+                    chars.next();
+
+                    span.advance(">=");
+
+                    return Some(Token {
+                        span: span.capture(),
+                        kind: TokenKind::GTE,
+                        literal: ">=".into(),
+                    });
+                }
+            }
+
+            None
+        },
+    };
+
+    #[cfg(test)]
+    mod gte_operator_tests {
+        use super::*;
+        use crate::TokenSpan;
+
+        #[test]
+        fn consume_gte() {
+            let mut chars = ">=".chars().peekable();
+            let mut span = SpanTracker::new();
+
+            let token = (GTE_OPERATOR_RULE.consume)(&mut chars, &mut span).unwrap();
+
+            assert_eq!(
+                token.span,
+                TokenSpan {
+                    line: 1,
+                    column: 1,
+                    length: 2
+                }
+            );
+            assert_eq!(token.kind, TokenKind::GTE);
+            assert_eq!(token.literal, ">=".into());
+        }
+
+        #[test]
+        fn consume_no_gte() {
+            let mut chars = "+".chars().peekable();
+            let mut span = SpanTracker::new();
+
+            let token = (GTE_OPERATOR_RULE.consume)(&mut chars, &mut span);
+
+            assert_eq!(token, None);
+        }
+    }
+
+    const COMMA_DELIMITER_RULE: Rule = Rule {
+        kind: TokenKind::COMMA,
+        consume: |chars, span| {
+            if let ',' = chars.peek()? {
+                chars.next();
+                span.advance(",");
+
+                return Some(Token {
+                    span: span.capture(),
+                    kind: TokenKind::COMMA,
+                    literal: ",".into(),
+                });
+            }
+
+            None
+        },
+    };
+
+    #[cfg(test)]
+    mod comma_delimiter_tests {
+        use super::*;
+        use crate::TokenSpan;
+
+        #[test]
+        fn consume_comma() {
+            let mut chars = ",".chars().peekable();
+            let mut span = SpanTracker::new();
+
+            let token = (COMMA_DELIMITER_RULE.consume)(&mut chars, &mut span).unwrap();
+
+            assert_eq!(
+                token.span,
+                TokenSpan {
+                    line: 1,
+                    column: 1,
+                    length: 1
+                }
+            );
+            assert_eq!(token.kind, TokenKind::COMMA);
+            assert_eq!(token.literal, ",".into());
+        }
+
+        #[test]
+        fn consume_no_comma() {
+            let mut chars = ";".chars().peekable();
+            let mut span = SpanTracker::new();
+
+            let token = (COMMA_DELIMITER_RULE.consume)(&mut chars, &mut span);
+
+            assert_eq!(token, None);
+        }
+    }
+
+    const SEMICOLON_DELIMITER_RULE: Rule = Rule {
+        kind: TokenKind::SEMICOLON,
+        consume: |chars, span| {
+            if let ';' = chars.peek()? {
+                chars.next();
+                span.advance(";");
+
+                return Some(Token {
+                    span: span.capture(),
+                    kind: TokenKind::SEMICOLON,
+                    literal: ";".into(),
+                });
+            }
+
+            None
+        },
+    };
+
+    #[cfg(test)]
+    mod semicolon_delimiter_tests {
+        use super::*;
+        use crate::TokenSpan;
+
+        #[test]
+        fn consume_semicolon() {
+            let mut chars = ";".chars().peekable();
+            let mut span = SpanTracker::new();
+
+            let token = (SEMICOLON_DELIMITER_RULE.consume)(&mut chars, &mut span).unwrap();
+
+            assert_eq!(
+                token.span,
+                TokenSpan {
+                    line: 1,
+                    column: 1,
+                    length: 1
+                }
+            );
+            assert_eq!(token.kind, TokenKind::SEMICOLON);
+            assert_eq!(token.literal, ";".into());
+        }
+
+        #[test]
+        fn consume_no_semicolon() {
+            let mut chars = ",".chars().peekable();
+            let mut span = SpanTracker::new();
+
+            let token = (SEMICOLON_DELIMITER_RULE.consume)(&mut chars, &mut span);
+
+            assert_eq!(token, None);
+        }
+    }
+
+    const PARENTHESES_RULE: Rule = Rule {
+        kind: TokenKind::LPAREN,
+        consume: |chars, span| match chars.peek()? {
+            '(' => {
+                chars.next();
+                span.advance("(");
+
+                Some(Token {
+                    span: span.capture(),
+                    kind: TokenKind::LPAREN,
+                    literal: "(".into(),
+                })
+            }
+            ')' => {
+                chars.next();
+                span.advance(")");
+
+                Some(Token {
+                    span: span.capture(),
+                    kind: TokenKind::RPAREN,
+                    literal: ")".into(),
+                })
+            }
+            _ => None,
+        },
+    };
+
+    #[cfg(test)]
+    mod parentheses_tests {
+        use super::*;
+        use crate::TokenSpan;
+
+        #[test]
+        fn consume_parentheses() {
+            let mut chars = "()".chars().peekable();
+            let mut span = SpanTracker::new();
+
+            let token = (PARENTHESES_RULE.consume)(&mut chars, &mut span).unwrap();
+
+            assert_eq!(
+                token.span,
+                TokenSpan {
+                    line: 1,
+                    column: 1,
+                    length: 1
+                }
+            );
+            assert_eq!(token.kind, TokenKind::LPAREN);
+            assert_eq!(token.literal, "(".into());
+
+            let token = (PARENTHESES_RULE.consume)(&mut chars, &mut span).unwrap();
+
+            assert_eq!(
+                token.span,
+                TokenSpan {
+                    line: 1,
+                    column: 2,
+                    length: 1
+                }
+            );
+            assert_eq!(token.kind, TokenKind::RPAREN);
+            assert_eq!(token.literal, ")".into());
+        }
+
+        #[test]
+        fn consume_no_parentheses() {
+            let mut chars = "{}".chars().peekable();
+            let mut span = SpanTracker::new();
+
+            let token = (PARENTHESES_RULE.consume)(&mut chars, &mut span);
+
+            assert_eq!(token, None);
+        }
+    }
+
+    const BRACES_RULE: Rule = Rule {
+        kind: TokenKind::LBRACE,
+        consume: |chars, span| match chars.peek()? {
+            '{' => {
+                chars.next();
+                span.advance("{");
+
+                Some(Token {
+                    span: span.capture(),
+                    kind: TokenKind::LBRACE,
+                    literal: "{".into(),
+                })
+            }
+            '}' => {
+                chars.next();
+                span.advance("}");
+
+                Some(Token {
+                    span: span.capture(),
+                    kind: TokenKind::RBRACE,
+                    literal: "}".into(),
+                })
+            }
+            _ => None,
+        },
+    };
+
+    #[cfg(test)]
+    mod braces_tests {
+        use super::*;
+        use crate::TokenSpan;
+
+        #[test]
+        fn consume_braces() {
+            let mut chars = "{}".chars().peekable();
+            let mut span = SpanTracker::new();
+
+            let token = (BRACES_RULE.consume)(&mut chars, &mut span).unwrap();
+
+            assert_eq!(
+                token.span,
+                TokenSpan {
+                    line: 1,
+                    column: 1,
+                    length: 1
+                }
+            );
+            assert_eq!(token.kind, TokenKind::LBRACE);
+            assert_eq!(token.literal, "{".into());
+
+            let token = (BRACES_RULE.consume)(&mut chars, &mut span).unwrap();
+
+            assert_eq!(
+                token.span,
+                TokenSpan {
+                    line: 1,
+                    column: 2,
+                    length: 1
+                }
+            );
+            assert_eq!(token.kind, TokenKind::RBRACE);
+            assert_eq!(token.literal, "}".into());
+        }
+
+        #[test]
+        fn consume_no_braces() {
+            let mut chars = "()".chars().peekable();
+            let mut span = SpanTracker::new();
+
+            let token = (BRACES_RULE.consume)(&mut chars, &mut span);
+
+            assert_eq!(token, None);
+        }
+    }
+
+    const BRACKETS_RULE: Rule = Rule {
+        kind: TokenKind::LBRACKET,
+        consume: |chars, span| match chars.peek()? {
+            '[' => {
+                chars.next();
+                span.advance("[");
+
+                Some(Token {
+                    span: span.capture(),
+                    kind: TokenKind::LBRACKET,
+                    literal: "[".into(),
+                })
+            }
+            ']' => {
+                chars.next();
+                span.advance("]");
+
+                Some(Token {
+                    span: span.capture(),
+                    kind: TokenKind::RBRACKET,
+                    literal: "]".into(),
+                })
+            }
+            _ => None,
+        },
+    };
+
+    #[cfg(test)]
+    mod brackets_tests {
+        use super::*;
+        use crate::TokenSpan;
+
+        #[test]
+        fn consume_brackets() {
+            let mut chars = "[]".chars().peekable();
+            let mut span = SpanTracker::new();
+
+            let token = (BRACKETS_RULE.consume)(&mut chars, &mut span).unwrap();
+
+            assert_eq!(
+                token.span,
+                TokenSpan {
+                    line: 1,
+                    column: 1,
+                    length: 1
+                }
+            );
+            assert_eq!(token.kind, TokenKind::LBRACKET);
+            assert_eq!(token.literal, "[".into());
+
+            let token = (BRACKETS_RULE.consume)(&mut chars, &mut span).unwrap();
+
+            assert_eq!(
+                token.span,
+                TokenSpan {
+                    line: 1,
+                    column: 2,
+                    length: 1
+                }
+            );
+            assert_eq!(token.kind, TokenKind::RBRACKET);
+            assert_eq!(token.literal, "]".into());
+        }
+
+        #[test]
+        fn consume_no_brackets() {
+            let mut chars = "()".chars().peekable();
+            let mut span = SpanTracker::new();
+
+            let token = (BRACKETS_RULE.consume)(&mut chars, &mut span);
+
+            assert_eq!(token, None);
+        }
+    }
+
+    const STRINGS_RULE: Rule = Rule {
+        kind: TokenKind::STRING,
+        consume: |chars, span| {
+            if let Some('"') = chars.peek() {
+                let literal = {
+                    chars.next();
+                    span.advance("\"");
+
+                    let literal =
+                        utils::take_series_where(chars, |c| *c != '"').unwrap_or_default();
+                    span.advance(&literal);
+
+                    chars.next();
+                    span.advance("\"");
+
+                    literal
+                };
+
+                return Some(Token {
+                    span: span.capture(),
+                    kind: TokenKind::STRING,
+                    literal,
+                });
+            }
+
+            None
+        },
+    };
+
+    #[cfg(test)]
+    mod strings_tests {
+        use super::*;
+        use crate::TokenSpan;
+
+        #[test]
+        fn consume_string() {
+            let mut chars = "\"hello, world!\"".chars().peekable();
+            let mut span = SpanTracker::new();
+
+            let token = (STRINGS_RULE.consume)(&mut chars, &mut span).unwrap();
+
+            assert_eq!(
+                token.span,
+                TokenSpan {
                     line: 1,
                     column: 15,
-                    length: 6,
-                },
-                kind: TokenKind::RETURN,
-                literal: "return".into(),
-            },
-            Token {
-                span: TokenSpan {
-                    line: 1,
-                    column: 22,
-                    length: 4,
-                },
-                kind: TokenKind::TRUE,
-                literal: "true".into(),
-            },
-            Token {
-                span: TokenSpan {
-                    line: 1,
-                    column: 26,
-                    length: 1,
-                },
-                kind: TokenKind::SEMICOLON,
-                literal: ";".into(),
-            },
-            Token {
-                span: TokenSpan {
-                    line: 1,
-                    column: 28,
-                    length: 1,
-                },
-                kind: TokenKind::RBRACE,
-                literal: "}".into(),
-            },
-            Token {
-                span: TokenSpan {
-                    line: 1,
-                    column: 30,
-                    length: 4,
-                },
-                kind: TokenKind::ELSE,
-                literal: "else".into(),
-            },
-            Token {
-                span: TokenSpan {
-                    line: 1,
-                    column: 35,
-                    length: 1,
-                },
-                kind: TokenKind::LBRACE,
-                literal: "{".into(),
-            },
-            Token {
-                span: TokenSpan {
-                    line: 1,
-                    column: 37,
-                    length: 6,
-                },
-                kind: TokenKind::RETURN,
-                literal: "return".into(),
-            },
-            Token {
-                span: TokenSpan {
-                    line: 1,
-                    column: 44,
-                    length: 5,
-                },
-                kind: TokenKind::FALSE,
-                literal: "false".into(),
-            },
-            Token {
-                span: TokenSpan {
-                    line: 1,
-                    column: 49,
-                    length: 1,
-                },
-                kind: TokenKind::SEMICOLON,
-                literal: ";".into(),
-            },
-            Token {
-                span: TokenSpan {
-                    line: 1,
-                    column: 51,
-                    length: 1,
-                },
-                kind: TokenKind::RBRACE,
-                literal: "}".into(),
-            },
-        ];
+                    length: 1
+                }
+            );
+            assert_eq!(token.kind, TokenKind::STRING);
+            assert_eq!(token.literal, "hello, world!".into());
+        }
 
-        let mut lexer = Lexer::new(input);
+        #[test]
+        fn consume_no_string() {
+            let mut chars = "abc".chars().peekable();
+            let mut span = SpanTracker::new();
 
-        for expected in tokens {
-            let actual = lexer.next().unwrap();
-            assert_eq!(actual, expected);
+            let token = (STRINGS_RULE.consume)(&mut chars, &mut span);
+
+            assert_eq!(token, None);
+        }
+    }
+
+    const INTEGERS_RULE: Rule = Rule {
+        kind: TokenKind::INT,
+        consume: |chars, span| match utils::take_series_where(chars, |c| c.is_ascii_digit()) {
+            Some(literal) => {
+                span.advance(&literal);
+
+                Some(Token {
+                    span: span.capture(),
+                    kind: TokenKind::INT,
+                    literal,
+                })
+            }
+            None => None,
+        },
+    };
+
+    #[cfg(test)]
+    mod integers_tests {
+        use super::*;
+        use crate::TokenSpan;
+
+        #[test]
+        fn consume_integer() {
+            let mut chars = "123".chars().peekable();
+            let mut span = SpanTracker::new();
+
+            let token = (INTEGERS_RULE.consume)(&mut chars, &mut span).unwrap();
+
+            assert_eq!(
+                token.span,
+                TokenSpan {
+                    line: 1,
+                    column: 1,
+                    length: 3
+                }
+            );
+            assert_eq!(token.kind, TokenKind::INT);
+            assert_eq!(token.literal, "123".into());
+        }
+
+        #[test]
+        fn consume_no_integer() {
+            let mut chars = "abc".chars().peekable();
+            let mut span = SpanTracker::new();
+
+            let token = (INTEGERS_RULE.consume)(&mut chars, &mut span);
+
+            assert_eq!(token, None);
+        }
+    }
+
+    const LET_KEYWORD_RULE: Rule = Rule {
+        kind: TokenKind::LET,
+        consume: |chars, span| {
+            let mut cloned = chars.clone();
+
+            let keyword = "let";
+            let literal = utils::take_series_where(&mut cloned, |c| c.is_ascii_alphabetic())?;
+
+            if &*literal == keyword {
+                for _ in 0..keyword.len() {
+                    chars.next();
+                }
+
+                span.advance(&literal);
+
+                return Some(Token {
+                    span: span.capture(),
+                    kind: TokenKind::LET,
+                    literal: literal.into(),
+                });
+            }
+
+            None
+        },
+    };
+
+    #[cfg(test)]
+    mod let_keyword_tests {
+        use super::*;
+        use crate::TokenSpan;
+
+        #[test]
+        fn consume_let_keyword() {
+            let mut chars = "let".chars().peekable();
+            let mut span = SpanTracker::new();
+
+            let token = (LET_KEYWORD_RULE.consume)(&mut chars, &mut span).unwrap();
+
+            assert_eq!(
+                token.span,
+                TokenSpan {
+                    line: 1,
+                    column: 1,
+                    length: 3
+                }
+            );
+            assert_eq!(token.kind, TokenKind::LET);
+            assert_eq!(token.literal, "let".into());
+        }
+
+        #[test]
+        fn consume_no_let_keyword() {
+            let mut chars = "abc".chars().peekable();
+            let mut span = SpanTracker::new();
+
+            let token = (LET_KEYWORD_RULE.consume)(&mut chars, &mut span);
+
+            assert_eq!(token, None);
+        }
+    }
+
+    const FUNCTION_KEYWORD_RULE: Rule = Rule {
+        kind: TokenKind::FUNCTION,
+        consume: |chars, span| {
+            let mut cloned = chars.clone();
+
+            let keyword = "fn";
+            let literal = utils::take_series_where(&mut cloned, |c| c.is_ascii_alphabetic())?;
+
+            if &*literal == keyword {
+                for _ in 0..keyword.len() {
+                    chars.next();
+                }
+
+                span.advance(&literal);
+
+                return Some(Token {
+                    span: span.capture(),
+                    kind: TokenKind::FUNCTION,
+                    literal: literal.into(),
+                });
+            }
+
+            None
+        },
+    };
+
+    #[cfg(test)]
+    mod function_keyword_tests {
+        use super::*;
+        use crate::TokenSpan;
+
+        #[test]
+        fn consume_function_keyword() {
+            let mut chars = "fn".chars().peekable();
+            let mut span = SpanTracker::new();
+
+            let token = (FUNCTION_KEYWORD_RULE.consume)(&mut chars, &mut span).unwrap();
+
+            assert_eq!(
+                token.span,
+                TokenSpan {
+                    line: 1,
+                    column: 1,
+                    length: 2
+                }
+            );
+            assert_eq!(token.kind, TokenKind::FUNCTION);
+            assert_eq!(token.literal, "fn".into());
+        }
+
+        #[test]
+        fn consume_no_function_keyword() {
+            let mut chars = "abc".chars().peekable();
+            let mut span = SpanTracker::new();
+
+            let token = (FUNCTION_KEYWORD_RULE.consume)(&mut chars, &mut span);
+
+            assert_eq!(token, None);
+        }
+    }
+
+    const RETURN_KEYWORD_RULE: Rule = Rule {
+        kind: TokenKind::RETURN,
+        consume: |chars, span| {
+            let mut cloned = chars.clone();
+
+            let keyword = "return";
+            let literal = utils::take_series_where(&mut cloned, |c| c.is_ascii_alphabetic())?;
+
+            if &*literal == keyword {
+                for _ in 0..keyword.len() {
+                    chars.next();
+                }
+
+                span.advance(&literal);
+
+                return Some(Token {
+                    span: span.capture(),
+                    kind: TokenKind::RETURN,
+                    literal: literal.into(),
+                });
+            }
+
+            None
+        },
+    };
+
+    #[cfg(test)]
+    mod return_keyword_tests {
+        use super::*;
+        use crate::TokenSpan;
+
+        #[test]
+        fn consume_return_keyword() {
+            let mut chars = "return".chars().peekable();
+            let mut span = SpanTracker::new();
+
+            let token = (RETURN_KEYWORD_RULE.consume)(&mut chars, &mut span).unwrap();
+
+            assert_eq!(
+                token.span,
+                TokenSpan {
+                    line: 1,
+                    column: 1,
+                    length: 6
+                }
+            );
+            assert_eq!(token.kind, TokenKind::RETURN);
+            assert_eq!(token.literal, "return".into());
+        }
+
+        #[test]
+        fn consume_no_return_keyword() {
+            let mut chars = "abc".chars().peekable();
+            let mut span = SpanTracker::new();
+
+            let token = (RETURN_KEYWORD_RULE.consume)(&mut chars, &mut span);
+
+            assert_eq!(token, None);
+        }
+    }
+
+    const IF_KEYWORD_RULE: Rule = Rule {
+        kind: TokenKind::IF,
+        consume: |chars, span| {
+            let mut cloned = chars.clone();
+
+            let keyword = "if";
+            let literal = utils::take_series_where(&mut cloned, |c| c.is_ascii_alphabetic())?;
+
+            if &*literal == keyword {
+                for _ in 0..keyword.len() {
+                    chars.next();
+                }
+
+                span.advance(&literal);
+
+                return Some(Token {
+                    span: span.capture(),
+                    kind: TokenKind::IF,
+                    literal: literal.into(),
+                });
+            }
+
+            None
+        },
+    };
+
+    #[cfg(test)]
+    mod if_keyword_tests {
+        use super::*;
+        use crate::TokenSpan;
+
+        #[test]
+        fn consume_if_keyword() {
+            let mut chars = "if".chars().peekable();
+            let mut span = SpanTracker::new();
+
+            let token = (IF_KEYWORD_RULE.consume)(&mut chars, &mut span).unwrap();
+
+            assert_eq!(
+                token.span,
+                TokenSpan {
+                    line: 1,
+                    column: 1,
+                    length: 2
+                }
+            );
+            assert_eq!(token.kind, TokenKind::IF);
+            assert_eq!(token.literal, "if".into());
+        }
+
+        #[test]
+        fn consume_no_if_keyword() {
+            let mut chars = "abc".chars().peekable();
+            let mut span = SpanTracker::new();
+
+            let token = (IF_KEYWORD_RULE.consume)(&mut chars, &mut span);
+
+            assert_eq!(token, None);
+        }
+    }
+
+    const ELSE_KEYWORD_RULE: Rule = Rule {
+        kind: TokenKind::ELSE,
+        consume: |chars, span| {
+            let mut cloned = chars.clone();
+
+            let keyword = "else";
+            let literal = utils::take_series_where(&mut cloned, |c| c.is_ascii_alphabetic())?;
+
+            if &*literal == keyword {
+                for _ in 0..keyword.len() {
+                    chars.next();
+                }
+
+                span.advance(&literal);
+
+                return Some(Token {
+                    span: span.capture(),
+                    kind: TokenKind::ELSE,
+                    literal: literal.into(),
+                });
+            }
+
+            None
+        },
+    };
+
+    #[cfg(test)]
+    mod else_keyword_tests {
+        use super::*;
+        use crate::TokenSpan;
+
+        #[test]
+        fn consume_else_keyword() {
+            let mut chars = "else".chars().peekable();
+            let mut span = SpanTracker::new();
+
+            let token = (ELSE_KEYWORD_RULE.consume)(&mut chars, &mut span).unwrap();
+
+            assert_eq!(
+                token.span,
+                TokenSpan {
+                    line: 1,
+                    column: 1,
+                    length: 4
+                }
+            );
+            assert_eq!(token.kind, TokenKind::ELSE);
+            assert_eq!(token.literal, "else".into());
+        }
+
+        #[test]
+        fn consume_no_else_keyword() {
+            let mut chars = "abc".chars().peekable();
+            let mut span = SpanTracker::new();
+
+            let token = (ELSE_KEYWORD_RULE.consume)(&mut chars, &mut span);
+
+            assert_eq!(token, None);
+        }
+    }
+
+    const TRUE_KEYWORD_RULE: Rule = Rule {
+        kind: TokenKind::TRUE,
+        consume: |chars, span| {
+            let mut cloned = chars.clone();
+
+            let keyword = "true";
+            let literal = utils::take_series_where(&mut cloned, |c| c.is_ascii_alphabetic())?;
+
+            if &*literal == keyword {
+                for _ in 0..keyword.len() {
+                    chars.next();
+                }
+
+                span.advance(&literal);
+
+                return Some(Token {
+                    span: span.capture(),
+                    kind: TokenKind::TRUE,
+                    literal: literal.into(),
+                });
+            }
+
+            None
+        },
+    };
+
+    #[cfg(test)]
+    mod true_keyword_tests {
+        use super::*;
+        use crate::TokenSpan;
+
+        #[test]
+        fn consume_true_keyword() {
+            let mut chars = "true".chars().peekable();
+            let mut span = SpanTracker::new();
+
+            let token = (TRUE_KEYWORD_RULE.consume)(&mut chars, &mut span).unwrap();
+
+            assert_eq!(
+                token.span,
+                TokenSpan {
+                    line: 1,
+                    column: 1,
+                    length: 4
+                }
+            );
+            assert_eq!(token.kind, TokenKind::TRUE);
+            assert_eq!(token.literal, "true".into());
+        }
+
+        #[test]
+        fn consume_no_true_keyword() {
+            let mut chars = "abc".chars().peekable();
+            let mut span = SpanTracker::new();
+
+            let token = (TRUE_KEYWORD_RULE.consume)(&mut chars, &mut span);
+
+            assert_eq!(token, None);
+        }
+    }
+
+    const FALSE_KEYWORD_RULE: Rule = Rule {
+        kind: TokenKind::FALSE,
+        consume: |chars, span| {
+            let mut cloned = chars.clone();
+
+            let keyword = "false";
+            let literal = utils::take_series_where(&mut cloned, |c| c.is_ascii_alphabetic())?;
+
+            if &*literal == keyword {
+                for _ in 0..keyword.len() {
+                    chars.next();
+                }
+
+                span.advance(&literal);
+
+                return Some(Token {
+                    span: span.capture(),
+                    kind: TokenKind::FALSE,
+                    literal: literal.into(),
+                });
+            }
+
+            None
+        },
+    };
+
+    #[cfg(test)]
+    mod false_keyword_tests {
+        use super::*;
+        use crate::TokenSpan;
+
+        #[test]
+        fn consume_false_keyword() {
+            let mut chars = "false".chars().peekable();
+            let mut span = SpanTracker::new();
+
+            let token = (FALSE_KEYWORD_RULE.consume)(&mut chars, &mut span).unwrap();
+
+            assert_eq!(
+                token.span,
+                TokenSpan {
+                    line: 1,
+                    column: 1,
+                    length: 5
+                }
+            );
+            assert_eq!(token.kind, TokenKind::FALSE);
+            assert_eq!(token.literal, "false".into());
+        }
+
+        #[test]
+        fn consume_no_false_keyword() {
+            let mut chars = "abc".chars().peekable();
+            let mut span = SpanTracker::new();
+
+            let token = (FALSE_KEYWORD_RULE.consume)(&mut chars, &mut span);
+
+            assert_eq!(token, None);
+        }
+    }
+
+    const IDENTIFIER_RULE: Rule = Rule {
+        kind: TokenKind::IDENT,
+        consume: |chars, span| {
+            let literal =
+                utils::take_series_where(chars, |c| c.is_ascii_alphabetic() || *c == '_')?;
+
+            span.advance(&literal);
+
+            Some(Token {
+                span: span.capture(),
+                kind: TokenKind::IDENT,
+                literal,
+            })
+        },
+    };
+
+    #[cfg(test)]
+    mod identifier_tests {
+        use super::*;
+        use crate::TokenSpan;
+
+        #[test]
+        fn consume_identifier() {
+            let mut chars = "abc".chars().peekable();
+            let mut span = SpanTracker::new();
+
+            let token = (IDENTIFIER_RULE.consume)(&mut chars, &mut span).unwrap();
+
+            assert_eq!(
+                token.span,
+                TokenSpan {
+                    line: 1,
+                    column: 1,
+                    length: 3
+                }
+            );
+            assert_eq!(token.kind, TokenKind::IDENT);
+            assert_eq!(token.literal, "abc".into());
+        }
+
+        #[test]
+        fn consume_no_identifier() {
+            let mut chars = "123".chars().peekable();
+            let mut span = SpanTracker::new();
+
+            let token = (IDENTIFIER_RULE.consume)(&mut chars, &mut span);
+
+            assert_eq!(token, None);
+        }
+    }
+}
+
+mod utils {
+    use std::{iter::Peekable, str::Chars};
+
+    use crate::TokenSpan;
+
+    #[derive(Debug)]
+    pub struct SpanTracker {
+        line: usize,
+        column_start: usize,
+        column_end: usize,
+    }
+
+    impl SpanTracker {
+        pub fn new() -> Self {
+            Self {
+                line: 1,
+                column_start: 0,
+                column_end: 0,
+            }
+        }
+
+        pub fn advance(&mut self, literal: &str) {
+            let mut chars = literal.chars().peekable();
+
+            if chars.peek().is_some() {
+                self.column_start = self.column_end + 1;
+            }
+
+            while let Some(c) = chars.next() {
+                match c {
+                    '\n' => {
+                        self.line += 1;
+                        self.column_start = 0;
+                        self.column_end = 0;
+                    }
+                    _ => {
+                        self.column_end += 1;
+                    }
+                }
+            }
+        }
+
+        pub fn capture(&self) -> TokenSpan {
+            let line = self.line;
+
+            let column = match self.column_start {
+                0 => 1,
+                _ => self.column_start,
+            };
+
+            let length = match self.column_end >= self.column_start {
+                true => self.column_end - self.column_start + 1,
+                false => 0,
+            };
+
+            TokenSpan {
+                line,
+                column,
+                length,
+            }
+        }
+    }
+
+    pub fn take_series_where<F>(chars: &mut Peekable<Chars>, predicate: F) -> Option<Box<str>>
+    where
+        F: Fn(&char) -> bool,
+    {
+        let mut result = String::new();
+
+        while let Some(c) = chars.peek() {
+            match predicate(c) {
+                true => {
+                    result.push(*c);
+                    chars.next();
+                }
+                false => break,
+            }
+        }
+
+        match result.is_empty() {
+            true => None,
+            false => Some(result.into_boxed_str()),
         }
     }
 }
