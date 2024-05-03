@@ -917,4 +917,62 @@ mod tests {
             }
         }
     }
+
+    #[test]
+    fn test_eval_builtins_push_function() {
+        let tests = vec![
+            ("push([], 1);", vec![1]),
+            ("push([1], 2);", vec![1, 2]),
+            ("push([1, 2], 3);", vec![1, 2, 3]),
+            ("push([1, 2, 3], 4);", vec![1, 2, 3, 4]),
+        ];
+
+        for (input, expected) in tests {
+            let lexer = Lexer::new(input);
+            let mut parser = Parser::new(lexer);
+
+            let program = parser.parse().unwrap();
+            let env = Rc::new(RefCell::new(Environment::new(None)));
+
+            match Evaluator::execute(program, env) {
+                Ok(DataType::ARRAY(value)) => {
+                    assert_eq!(
+                        value
+                            .iter()
+                            .map(|element| match element {
+                                DataType::INT(value) => *value,
+                                _ => panic!("expected an integer, got something else"),
+                            })
+                            .collect::<Vec<i64>>(),
+                        expected
+                    );
+                }
+                _ => panic!("expected an array, got something else"),
+            }
+        }
+
+        let test_errors = vec![
+            (
+                "push(1, 1);",
+                r#"argument[0] passed to BUILTIN("push") is not supported. got=INT(1), want=ARRAY"#,
+            ),
+            (
+                r#"push([1]);"#,
+                r#"extra arguments are passed to BUILTIN("push"). got=1, want=2"#,
+            ),
+        ];
+
+        for (input, expected) in test_errors {
+            let lexer = Lexer::new(input);
+            let mut parser = Parser::new(lexer);
+
+            let program = parser.parse().unwrap();
+            let env = Rc::new(RefCell::new(Environment::new(None)));
+
+            match Evaluator::execute(program, env) {
+                Err(error) => assert_eq!(error.to_string(), expected),
+                _ => panic!("expected an error, got something else"),
+            }
+        }
+    }
 }
