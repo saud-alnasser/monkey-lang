@@ -16,6 +16,9 @@ pub enum DataType {
         body: BlockStatement,
         env: Rc<RefCell<Environment>>,
     },
+    BUILTIN {
+        func: fn(Vec<DataType>) -> Result<DataType, Box<dyn Error>>,
+    },
     NULL,
 }
 
@@ -28,6 +31,7 @@ impl Display for DataType {
             DataType::RETURN(value) => write!(f, "{}", value),
             DataType::IDENT(value) => write!(f, "{}", value),
             DataType::FUNCTION { .. } => write!(f, ""),
+            DataType::BUILTIN { .. } => write!(f, ""),
             DataType::NULL => write!(f, ""),
         }
     }
@@ -224,6 +228,10 @@ impl Evaluator {
                     }
 
                     return Evaluator::eval_statement(Statement::Block(body), extended_env);
+                }
+
+                if let DataType::BUILTIN { func } = function {
+                    return func(arguments);
                 }
 
                 Err(Box::new(EvaluationError::UnknownOperator(expression.token)))
@@ -605,6 +613,48 @@ mod tests {
         match Evaluator::execute(program, env) {
             Ok(DataType::INT(value)) => assert_eq!(value, 4),
             _ => panic!("expected an integer, got something else"),
+        }
+    }
+
+    #[test]
+    fn test_eval_builtin_len_function() {
+        let tests = vec![(r#"len("");"#, 0), (r#"len("hello, world!");"#, 13)];
+
+        for (input, expected) in tests {
+            let lexer = Lexer::new(input);
+            let mut parser = Parser::new(lexer);
+
+            let program = parser.parse().unwrap();
+            let env = Rc::new(RefCell::new(Environment::new(None)));
+
+            match Evaluator::execute(program, env) {
+                Ok(DataType::INT(value)) => assert_eq!(value, expected),
+                _ => panic!("expected an integer, got something else"),
+            }
+        }
+
+        let test_errors = vec![
+            (
+                "len(1);",
+                r#"argument passed to BUILTIN("len") is not supported. got=INT(1), want=STRING(any)"#,
+            ),
+            (
+                r#"len("one", "two");"#,
+                r#"extra arguments are passed to BUILTIN("len"). got=2, want=1"#,
+            ),
+        ];
+
+        for (input, expected) in test_errors {
+            let lexer = Lexer::new(input);
+            let mut parser = Parser::new(lexer);
+
+            let program = parser.parse().unwrap();
+            let env = Rc::new(RefCell::new(Environment::new(None)));
+
+            match Evaluator::execute(program, env) {
+                Err(error) => assert_eq!(error.to_string(), expected),
+                _ => panic!("expected an error, got something else"),
+            }
         }
     }
 }
