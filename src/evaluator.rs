@@ -20,6 +20,7 @@ pub enum DataType {
     BUILTIN {
         func: fn(Vec<DataType>) -> Result<DataType, Box<dyn Error>>,
     },
+    UNDEFINED,
     NULL,
 }
 
@@ -42,7 +43,8 @@ impl Display for DataType {
             DataType::IDENT(value) => write!(f, "{}", value),
             DataType::FUNCTION { .. } => write!(f, ""),
             DataType::BUILTIN { .. } => write!(f, ""),
-            DataType::NULL => write!(f, ""),
+            DataType::UNDEFINED => write!(f, ""),
+            DataType::NULL => write!(f, "null"),
         }
     }
 }
@@ -222,7 +224,7 @@ impl Evaluator {
                         Some(statement) => {
                             Ok(Evaluator::eval_statement(Statement::Block(statement), env)?)
                         }
-                        None => Ok(DataType::NULL),
+                        None => Ok(DataType::UNDEFINED),
                     },
                 }
             }
@@ -281,7 +283,7 @@ impl Evaluator {
     ) -> Result<DataType, Box<dyn Error>> {
         match statement {
             Statement::Block(block) => {
-                let mut result = DataType::NULL;
+                let mut result = DataType::UNDEFINED;
 
                 for statement in block.statements {
                     result = Evaluator::eval_statement(statement, Rc::clone(&env))?;
@@ -297,7 +299,7 @@ impl Evaluator {
                 let value = Evaluator::eval_expression(statement.expression, Rc::clone(&env))?;
                 env.borrow_mut().set(&statement.identifier, value);
 
-                Ok(DataType::NULL)
+                Ok(DataType::UNDEFINED)
             }
             Statement::Return(statement) => Ok(DataType::RETURN(Box::new(
                 Evaluator::eval_expression(statement.expression, Rc::clone(&env))?,
@@ -312,7 +314,7 @@ impl Evaluator {
         program: Program,
         env: Rc<RefCell<Environment>>,
     ) -> Result<DataType, Box<dyn Error>> {
-        let mut result = DataType::NULL;
+        let mut result = DataType::UNDEFINED;
 
         for statement in program.statements {
             result = Evaluator::eval_statement(statement, Rc::clone(&env))?;
@@ -542,7 +544,7 @@ mod tests {
 
             match Evaluator::execute(program, env) {
                 Ok(DataType::INT(value)) => assert_eq!(value, expected),
-                Ok(DataType::NULL) => assert_eq!(expected, 0),
+                Ok(DataType::UNDEFINED) => assert_eq!(expected, 0),
                 _ => panic!("expected an integer, got something else"),
             }
         }
