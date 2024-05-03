@@ -1,3 +1,25 @@
+## 0.0.9 (2024-05-03)
+
+### Features
+
+#### implement string data-type (#60)
+
+#### implement string concatenation (#63)
+
+#### implement builtin len function (#64)
+
+#### implement array data-type (#65)
+
+#### implement array indexing (#66)
+
+#### implement builtin first function (#67)
+
+#### implement builtin last function (#68)
+
+#### implement builtin rest function (#69)
+
+#### implement builtin push function (#70)
+
 ## 0.0.8 (2024-05-01)
 
 ### Features
