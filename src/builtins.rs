@@ -1,6 +1,6 @@
 use crate::DataType;
 
-pub fn builtins() -> [(&'static str, DataType); 3] {
+pub fn builtins() -> [(&'static str, DataType); 4] {
     [
         (
             "len",
@@ -77,6 +77,35 @@ pub fn builtins() -> [(&'static str, DataType); 3] {
                         },
                         _ => Err(format!(
                             r#"argument passed to BUILTIN("last") is not supported. got={:?}, want=ARRAY"#,
+                            args[0]
+                        )
+                        .into()),
+                    }
+                },
+            },
+        ),
+        (
+            "rest",
+            DataType::BUILTIN {
+                func: |args| {
+                    if args.len() != 1 {
+                        return Err(format!(
+                            r#"extra arguments are passed to BUILTIN("rest"). got={}, want=1"#,
+                            args.len()
+                        )
+                        .into());
+                    }
+
+                    match &args[0] {
+                        DataType::ARRAY(array) => {
+                            if array.is_empty() {
+                                return Ok(DataType::ARRAY(vec![]));
+                            }
+
+                            Ok(DataType::ARRAY(array[1..].to_vec()))
+                        },
+                        _ => Err(format!(
+                            r#"argument passed to BUILTIN("rest") is not supported. got={:?}, want=ARRAY"#,
                             args[0]
                         )
                         .into()),
