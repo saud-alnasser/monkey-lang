@@ -6,6 +6,7 @@ use self::{
     utils::SpanTracker,
 };
 
+#[derive(Debug)]
 pub struct Lexer<'a> {
     chars: Peekable<Chars<'a>>,
     span: SpanTracker,
