@@ -5,7 +5,6 @@ mod evaluator;
 mod lexer;
 mod parser;
 mod repl;
-mod utils;
 
 pub use ast::*;
 pub use builtins::*;

@@ -1,9 +1,12 @@
+mod quantifiers;
+mod utils;
+
 use std::{iter::Peekable, str::Chars};
 
-use crate::{utils, Token, TokenKind, TokenSpan};
+use crate::{Token, TokenKind, TokenSpan};
 
 #[derive(Debug)]
-struct SpanTracker {
+pub struct SpanTracker {
     line: usize,
     column_start: usize,
     column_end: usize,
@@ -60,9 +63,14 @@ impl SpanTracker {
     }
 }
 
+pub trait LexerQuantifier {
+    fn consume(&mut self, chars: &mut Peekable<Chars>, span: &mut SpanTracker) -> Option<Token>;
+}
+
 pub struct Lexer<'a> {
     chars: Peekable<Chars<'a>>,
     span: SpanTracker,
+    quantifiers: Vec<Box<dyn LexerQuantifier>>,
     peeked: Option<Token>,
     exhausted: bool,
 }
@@ -72,329 +80,17 @@ impl Lexer<'_> {
         Lexer {
             chars: input.trim_start().chars().peekable(),
             span: SpanTracker::new(),
+            quantifiers: vec![
+                Box::new(quantifiers::WhitespaceQuantifier),
+                Box::new(quantifiers::OperatorsQuantifier),
+                Box::new(quantifiers::DelimitersQuantifier),
+                Box::new(quantifiers::BracketsQuantifier),
+                Box::new(quantifiers::StringsQuantifier),
+                Box::new(quantifiers::IntegersQuantifier),
+                Box::new(quantifiers::KeywordsAndIdentifiersQuantifier),
+            ],
             peeked: None,
             exhausted: false,
-        }
-    }
-
-    fn consume_whitespace(chars: &mut Peekable<Chars>, span: &mut SpanTracker) {
-        if let Some(whitespace) = utils::take_series_where(chars, |c| c.is_whitespace()) {
-            span.advance(&whitespace);
-        }
-    }
-
-    fn consume_operators(chars: &mut Peekable<Chars>, span: &mut SpanTracker) -> Option<Token> {
-        match chars.peek()? {
-            '=' => {
-                chars.next();
-                match chars.peek() {
-                    Some('=') => {
-                        chars.next();
-                        span.advance("==");
-                        Some(Token {
-                            span: span.capture(),
-                            kind: TokenKind::EQ,
-                            literal: "==".into(),
-                        })
-                    }
-                    _ => {
-                        span.advance("=");
-                        Some(Token {
-                            span: span.capture(),
-                            kind: TokenKind::ASSIGN,
-                            literal: "=".into(),
-                        })
-                    }
-                }
-            }
-            '+' => {
-                chars.next();
-                span.advance("+");
-                Some(Token {
-                    span: span.capture(),
-                    kind: TokenKind::PLUS,
-                    literal: "+".into(),
-                })
-            }
-            '-' => {
-                chars.next();
-                span.advance("-");
-                Some(Token {
-                    span: span.capture(),
-                    kind: TokenKind::MINUS,
-                    literal: "-".into(),
-                })
-            }
-            '*' => {
-                chars.next();
-                span.advance("*");
-                Some(Token {
-                    span: span.capture(),
-                    kind: TokenKind::ASTERISK,
-                    literal: "*".into(),
-                })
-            }
-            '/' => {
-                chars.next();
-                span.advance("/");
-                Some(Token {
-                    span: span.capture(),
-                    kind: TokenKind::SLASH,
-                    literal: "/".into(),
-                })
-            }
-            '!' => {
-                chars.next();
-                match chars.peek() {
-                    Some('=') => {
-                        chars.next();
-                        span.advance("!=");
-                        Some(Token {
-                            span: span.capture(),
-                            kind: TokenKind::NEQ,
-                            literal: "!=".into(),
-                        })
-                    }
-                    _ => {
-                        span.advance("!");
-                        Some(Token {
-                            span: span.capture(),
-                            kind: TokenKind::BANG,
-                            literal: "!".into(),
-                        })
-                    }
-                }
-            }
-            '<' => {
-                chars.next();
-                match chars.peek() {
-                    Some('=') => {
-                        chars.next();
-                        span.advance("<=");
-                        Some(Token {
-                            span: span.capture(),
-                            kind: TokenKind::LTE,
-                            literal: "<=".into(),
-                        })
-                    }
-                    _ => {
-                        span.advance("<");
-                        Some(Token {
-                            span: span.capture(),
-                            kind: TokenKind::LT,
-                            literal: "<".into(),
-                        })
-                    }
-                }
-            }
-            '>' => {
-                chars.next();
-                match chars.peek() {
-                    Some('=') => {
-                        chars.next();
-                        span.advance(">=");
-                        Some(Token {
-                            span: span.capture(),
-                            kind: TokenKind::GTE,
-                            literal: ">=".into(),
-                        })
-                    }
-                    _ => {
-                        span.advance(">");
-                        Some(Token {
-                            span: span.capture(),
-                            kind: TokenKind::GT,
-                            literal: ">".into(),
-                        })
-                    }
-                }
-            }
-            _ => None,
-        }
-    }
-
-    fn consume_delimiters(chars: &mut Peekable<Chars>, span: &mut SpanTracker) -> Option<Token> {
-        match chars.peek()? {
-            ',' => {
-                chars.next();
-                span.advance(",");
-                Some(Token {
-                    span: span.capture(),
-                    kind: TokenKind::COMMA,
-                    literal: ",".into(),
-                })
-            }
-            ';' => {
-                chars.next();
-                span.advance(";");
-                Some(Token {
-                    span: span.capture(),
-                    kind: TokenKind::SEMICOLON,
-                    literal: ";".into(),
-                })
-            }
-            _ => None,
-        }
-    }
-
-    fn consume_brackets(chars: &mut Peekable<Chars>, span: &mut SpanTracker) -> Option<Token> {
-        match chars.peek()? {
-            '(' => {
-                chars.next();
-                span.advance("(");
-                Some(Token {
-                    span: span.capture(),
-                    kind: TokenKind::LPAREN,
-                    literal: "(".into(),
-                })
-            }
-            ')' => {
-                chars.next();
-                span.advance(")");
-                Some(Token {
-                    span: span.capture(),
-                    kind: TokenKind::RPAREN,
-                    literal: ")".into(),
-                })
-            }
-            '{' => {
-                chars.next();
-                span.advance("{");
-                Some(Token {
-                    span: span.capture(),
-                    kind: TokenKind::LBRACE,
-                    literal: "{".into(),
-                })
-            }
-            '}' => {
-                chars.next();
-                span.advance("}");
-                Some(Token {
-                    span: span.capture(),
-                    kind: TokenKind::RBRACE,
-                    literal: "}".into(),
-                })
-            }
-            '[' => {
-                chars.next();
-                span.advance("[");
-                Some(Token {
-                    span: span.capture(),
-                    kind: TokenKind::LBRACKET,
-                    literal: "[".into(),
-                })
-            }
-            ']' => {
-                chars.next();
-                span.advance("]");
-                Some(Token {
-                    span: span.capture(),
-                    kind: TokenKind::RBRACKET,
-                    literal: "]".into(),
-                })
-            }
-            _ => None,
-        }
-    }
-
-    fn consume_string_literals(
-        chars: &mut Peekable<Chars>,
-        span: &mut SpanTracker,
-    ) -> Option<Token> {
-        if let Some('"') = chars.peek() {
-            let literal = {
-                chars.next();
-                span.advance("\"");
-
-                let literal = utils::take_series_where(chars, |c| *c != '"').unwrap_or_default();
-                span.advance(&literal);
-
-                chars.next();
-                span.advance("\"");
-
-                literal
-            };
-
-            return Some(Token {
-                span: span.capture(),
-                kind: TokenKind::STRING,
-                literal,
-            });
-        }
-
-        None
-    }
-
-    fn consume_integer_literals(
-        chars: &mut Peekable<Chars>,
-        span: &mut SpanTracker,
-    ) -> Option<Token> {
-        match utils::take_series_where(chars, |c| c.is_ascii_digit()) {
-            Some(literal) => {
-                span.advance(&literal);
-
-                Some(Token {
-                    span: span.capture(),
-                    kind: TokenKind::INT,
-                    literal,
-                })
-            }
-            None => None,
-        }
-    }
-
-    fn consume_keywords_and_identifiers(
-        chars: &mut Peekable<Chars>,
-        span: &mut SpanTracker,
-    ) -> Option<Token> {
-        match utils::take_series_where(chars, |c| c.is_ascii_alphanumeric() || *c == '_') {
-            Some(keyword) => {
-                span.advance(&keyword);
-
-                match &keyword[..] {
-                    "let" => Some(Token {
-                        span: span.capture(),
-                        kind: TokenKind::LET,
-                        literal: "let".into(),
-                    }),
-                    "fn" => Some(Token {
-                        span: span.capture(),
-                        kind: TokenKind::FUNCTION,
-                        literal: "fn".into(),
-                    }),
-                    "return" => Some(Token {
-                        span: span.capture(),
-                        kind: TokenKind::RETURN,
-                        literal: "return".into(),
-                    }),
-                    "if" => Some(Token {
-                        span: span.capture(),
-                        kind: TokenKind::IF,
-                        literal: "if".into(),
-                    }),
-                    "else" => Some(Token {
-                        span: span.capture(),
-                        kind: TokenKind::ELSE,
-                        literal: "else".into(),
-                    }),
-                    "true" => Some(Token {
-                        span: span.capture(),
-                        kind: TokenKind::TRUE,
-                        literal: "true".into(),
-                    }),
-                    "false" => Some(Token {
-                        span: span.capture(),
-                        kind: TokenKind::FALSE,
-                        literal: "false".into(),
-                    }),
-                    identifier => Some(Token {
-                        span: span.capture(),
-                        kind: TokenKind::IDENT,
-                        literal: identifier.into(),
-                    }),
-                }
-            }
-            None => None,
         }
     }
 
@@ -403,32 +99,10 @@ impl Lexer<'_> {
             return None;
         }
 
-        Lexer::consume_whitespace(&mut self.chars, &mut self.span);
-
-        if let Some(token) = Lexer::consume_operators(&mut self.chars, &mut self.span) {
-            return Some(token);
-        };
-
-        if let Some(token) = Lexer::consume_delimiters(&mut self.chars, &mut self.span) {
-            return Some(token);
-        }
-
-        if let Some(token) = Lexer::consume_brackets(&mut self.chars, &mut self.span) {
-            return Some(token);
-        }
-
-        if let Some(token) = Lexer::consume_string_literals(&mut self.chars, &mut self.span) {
-            return Some(token);
-        }
-
-        if let Some(token) = Lexer::consume_integer_literals(&mut self.chars, &mut self.span) {
-            return Some(token);
-        }
-
-        if let Some(token) =
-            Lexer::consume_keywords_and_identifiers(&mut self.chars, &mut self.span)
-        {
-            return Some(token);
+        for quantifier in &mut self.quantifiers {
+            if let Some(token) = quantifier.consume(&mut self.chars, &mut self.span) {
+                return Some(token);
+            }
         }
 
         self.exhausted = true;
@@ -1122,19 +796,6 @@ mod tests {
         for expected in tokens {
             let actual = lexer.next().unwrap();
             assert_eq!(actual, expected);
-        }
-    }
-
-    #[test]
-    fn test_string_literal() {
-        let tests = vec![(r#""hello, world!""#, "hello, world!")];
-
-        for (input, expected) in tests {
-            let mut lexer = Lexer::new(input);
-            let actual = lexer.next().unwrap();
-
-            assert_eq!(actual.kind, TokenKind::STRING);
-            assert_eq!(actual.literal, expected.into());
         }
     }
 }
