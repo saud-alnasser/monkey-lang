@@ -47,7 +47,7 @@ impl REPL {
 
             match REPL::execute(&code, Rc::clone(&env)) {
                 Ok(data) => match data {
-                    DataType::NULL => (),
+                    DataType::UNDEFINED => (),
                     _ => println!("{}", data),
                 },
                 Err(error) => {
