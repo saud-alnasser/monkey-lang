@@ -1,167 +1,10 @@
-use std::{error::Error, fmt::Display};
+use std::error::Error;
 
-use crate::{
-    ArrayExpression, BlockStatement, BooleanExpression, CallExpression, Expression,
-    ExpressionStatement, FunctionExpression, IdentExpression, IfExpression, IndexExpression,
-    InfixExpression, IntExpression, LetStatement, Lexer, Precedence, PrefixExpression, Program,
-    ReturnStatement, Statement, StringExpression, Token, TokenKind,
-};
+use crate::{Lexer, Program, Token, TokenKind};
+
+use self::{errors::ParseError, statements::StatementParser};
 
 #[derive(Debug)]
-pub enum ParseError {
-    MissingToken,
-    MissingOpeningParenthesis(Option<Token>),
-    MissingClosingParenthesis(Option<Token>),
-    MissingOpeningBrace(Option<Token>),
-    MissingClosingBrace(Option<Token>),
-    MissingOpeningBracket(Option<Token>),
-    MissingClosingBracket(Option<Token>),
-    MissingLetKeyword(Option<Token>),
-    MissingAssignmentOperator(Option<Token>),
-    MissingReturnKeyword(Option<Token>),
-    MissingSemicolon(Option<Token>),
-    MissingIdentifier(Option<Token>),
-    MissingBlockStatement(Option<Token>),
-    UnexpectedToken(Token),
-    IllegalToken(Token),
-}
-
-impl Error for ParseError {
-    fn description(&self) -> &str {
-        match self {
-            ParseError::MissingToken => "missing a token",
-            ParseError::MissingOpeningParenthesis(_) => "missing opening parenthesis",
-            ParseError::MissingClosingParenthesis(_) => "missing closing parenthesis",
-            ParseError::MissingOpeningBrace(_) => "missing opening brace",
-            ParseError::MissingClosingBrace(_) => "missing closing brace",
-            ParseError::MissingOpeningBracket(_) => "missing opening bracket",
-            ParseError::MissingClosingBracket(_) => "missing closing bracket",
-            ParseError::MissingLetKeyword(_) => "missing let keyword",
-            ParseError::MissingAssignmentOperator(_) => "missing assignment operator",
-            ParseError::MissingReturnKeyword(_) => "missing return keyword",
-            ParseError::MissingSemicolon(_) => "missing semicolon",
-            ParseError::MissingIdentifier(_) => "missing identifier",
-            ParseError::MissingBlockStatement(_) => "expected block statement",
-            ParseError::UnexpectedToken(_) => "unexpected token",
-            ParseError::IllegalToken(_) => "illegal token",
-        }
-    }
-}
-
-impl Display for ParseError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            ParseError::MissingToken => write!(f, "missing a token"),
-            ParseError::MissingOpeningParenthesis(token) => match token {
-                Some(token) => write!(
-                    f,
-                    "expected opening parenthesis, got {} at {}:{}",
-                    token.literal, token.span.line, token.span.column
-                ),
-                None => write!(f, "expected opening parenthesis, got EOF"),
-            },
-            ParseError::MissingClosingParenthesis(token) => match token {
-                Some(token) => write!(
-                    f,
-                    "expected closing parenthesis, got {} at {}:{}",
-                    token.literal, token.span.line, token.span.column
-                ),
-                None => write!(f, "expected closing parenthesis, got EOF"),
-            },
-            ParseError::MissingOpeningBrace(token) => match token {
-                Some(token) => write!(
-                    f,
-                    "expected opening brace, got {} at {}:{}",
-                    token.literal, token.span.line, token.span.column
-                ),
-                None => write!(f, "expected opening brace, got EOF"),
-            },
-            ParseError::MissingClosingBrace(token) => match token {
-                Some(token) => write!(
-                    f,
-                    "expected closing brace, got {} at {}:{}",
-                    token.literal, token.span.line, token.span.column
-                ),
-                None => write!(f, "expected closing brace, got EOF"),
-            },
-            ParseError::MissingOpeningBracket(token) => match token {
-                Some(token) => write!(
-                    f,
-                    "expected opening bracket, got {} at {}:{}",
-                    token.literal, token.span.line, token.span.column
-                ),
-                None => write!(f, "expected opening bracket, got EOF"),
-            },
-            ParseError::MissingClosingBracket(token) => match token {
-                Some(token) => write!(
-                    f,
-                    "expected closing bracket, got {} at {}:{}",
-                    token.literal, token.span.line, token.span.column
-                ),
-                None => write!(f, "expected closing bracket, got EOF"),
-            },
-            ParseError::MissingLetKeyword(token) => match token {
-                Some(token) => write!(
-                    f,
-                    "expected let keyword, got {} at {}:{}",
-                    token.literal, token.span.line, token.span.column
-                ),
-                None => write!(f, "expected let keyword, got EOF"),
-            },
-            ParseError::MissingAssignmentOperator(token) => match token {
-                Some(token) => write!(
-                    f,
-                    "expected assignment operator, got {} at {}:{}",
-                    token.literal, token.span.line, token.span.column
-                ),
-                None => write!(f, "expected assignment operator, got EOF"),
-            },
-            ParseError::MissingReturnKeyword(token) => match token {
-                Some(token) => write!(
-                    f,
-                    "expected return keyword, got {} at {}:{}",
-                    token.literal, token.span.line, token.span.column
-                ),
-                None => write!(f, "expected return keyword, got EOF"),
-            },
-            ParseError::MissingSemicolon(token) => match token {
-                Some(token) => write!(
-                    f,
-                    "expected semicolon, got {} at {}:{}",
-                    token.literal, token.span.line, token.span.column
-                ),
-                None => write!(f, "expected semicolon, got EOF"),
-            },
-            ParseError::MissingIdentifier(token) => match token {
-                Some(token) => write!(
-                    f,
-                    "expected identifier, got {} at {}:{}",
-                    token.literal, token.span.line, token.span.column
-                ),
-                None => write!(f, "expected identifier, got EOF"),
-            },
-            ParseError::MissingBlockStatement(token) => match token {
-                Some(token) => write!(
-                    f,
-                    "expected block statement, got {} at {}:{}",
-                    token.literal, token.span.line, token.span.column
-                ),
-                None => write!(f, "expected block statement, got EOF"),
-            },
-            ParseError::UnexpectedToken(token) => write!(
-                f,
-                "unexpected token {} at {}:{}",
-                token.literal, token.span.line, token.span.column
-            ),
-            ParseError::IllegalToken(token) => write!(
-                f,
-                "illegal token {} at {}:{}",
-                token.literal, token.span.line, token.span.column
-            ),
-        }
-    }
-}
-
 pub struct Parser<'a> {
     lexer: Lexer<'a>,
 }
@@ -169,528 +12,6 @@ pub struct Parser<'a> {
 impl<'a> Parser<'a> {
     pub fn new(lexer: Lexer<'a>) -> Self {
         Parser { lexer }
-    }
-
-    fn parse_expression(
-        lexer: &mut Lexer,
-        precedence: Precedence,
-    ) -> Result<Expression, Box<dyn Error>> {
-        let mut left = match lexer.next() {
-            Some(token) if token.kind == TokenKind::LPAREN => {
-                let expression = Parser::parse_expression(lexer, Precedence::LOWEST)?;
-
-                match lexer.next() {
-                    Some(token) if token.kind == TokenKind::RPAREN => (),
-                    Some(token) => {
-                        return Err(Box::new(ParseError::MissingClosingParenthesis(Some(token))))
-                    }
-                    None => return Err(Box::new(ParseError::MissingClosingParenthesis(None))),
-                }
-
-                expression
-            }
-            Some(token) if token.kind == TokenKind::IDENT => {
-                let identifier = Expression::IDENT(IdentExpression {
-                    token: token.clone(),
-                    value: token.literal.clone(),
-                });
-
-                match lexer.peek() {
-                    Some(next) if next.kind == TokenKind::LPAREN => {
-                        let function = Box::new(identifier);
-
-                        let arguments = {
-                            match lexer.next() {
-                                Some(token) if token.kind == TokenKind::LPAREN => (),
-                                Some(token) => {
-                                    return Err(Box::new(ParseError::MissingOpeningParenthesis(
-                                        Some(token),
-                                    )))
-                                }
-                                None => {
-                                    return Err(Box::new(ParseError::MissingOpeningParenthesis(
-                                        None,
-                                    )))
-                                }
-                            }
-
-                            let mut arguments = Vec::new();
-
-                            while let Some(token) = lexer.peek() {
-                                if token.kind == TokenKind::RPAREN {
-                                    break;
-                                }
-
-                                arguments
-                                    .push(Parser::parse_expression(lexer, Precedence::LOWEST)?);
-
-                                match lexer.peek() {
-                                    Some(token) if token.kind == TokenKind::COMMA => {
-                                        lexer.next().unwrap();
-                                    }
-                                    _ => continue,
-                                }
-                            }
-
-                            match lexer.next() {
-                                Some(token) if token.kind == TokenKind::RPAREN => (),
-                                Some(token) => {
-                                    return Err(Box::new(ParseError::MissingClosingParenthesis(
-                                        Some(token),
-                                    )))
-                                }
-                                None => {
-                                    return Err(Box::new(ParseError::MissingClosingParenthesis(
-                                        None,
-                                    )))
-                                }
-                            }
-
-                            arguments
-                        };
-
-                        Expression::CALL(CallExpression {
-                            token,
-                            function,
-                            arguments,
-                        })
-                    }
-                    Some(token) if token.kind == TokenKind::LBRACKET => {
-                        let token = {
-                            match lexer.next() {
-                                Some(token) if token.kind == TokenKind::LBRACKET => token,
-                                option => {
-                                    return Err(Box::new(ParseError::MissingOpeningBracket(option)))
-                                }
-                            }
-                        };
-
-                        let left = Box::new(identifier);
-
-                        let index = Box::new({
-                            let index = Parser::parse_expression(lexer, Precedence::LOWEST)?;
-
-                            match lexer.next() {
-                                Some(token) if token.kind == TokenKind::RBRACKET => (),
-                                option => {
-                                    return Err(Box::new(ParseError::MissingClosingBracket(option)))
-                                }
-                            };
-
-                            index
-                        });
-
-                        Expression::INDEX(IndexExpression { token, left, index })
-                    }
-                    _ => identifier,
-                }
-            }
-            Some(token) if token.kind == TokenKind::INT => {
-                let value = token.literal.parse::<i64>()?;
-                Expression::INT(IntExpression { token, value })
-            }
-            Some(token) if token.kind == TokenKind::STRING => {
-                let value = token.literal.clone();
-                Expression::STRING(StringExpression { token, value })
-            }
-            Some(token) if token.kind == TokenKind::TRUE || token.kind == TokenKind::FALSE => {
-                let value = token.kind == TokenKind::TRUE;
-                Expression::BOOLEAN(BooleanExpression { token, value })
-            }
-            Some(token) if token.kind == TokenKind::LBRACKET => {
-                let mut elements = Vec::new();
-
-                while let Some(token) = lexer.peek() {
-                    if token.kind == TokenKind::RBRACKET {
-                        break;
-                    }
-
-                    elements.push(Parser::parse_expression(lexer, Precedence::LOWEST)?);
-
-                    match lexer.peek() {
-                        Some(token) if token.kind == TokenKind::COMMA => {
-                            lexer.next().unwrap();
-                        }
-                        _ => continue,
-                    }
-                }
-
-                let array = match lexer.next() {
-                    Some(token) if token.kind == TokenKind::RBRACKET => {
-                        Expression::ARRAY(ArrayExpression { token, elements })
-                    }
-                    option => return Err(Box::new(ParseError::MissingClosingBracket(option))),
-                };
-
-                match lexer.peek() {
-                    Some(token) if token.kind == TokenKind::LBRACKET => {
-                        let token = {
-                            match lexer.next() {
-                                Some(token) if token.kind == TokenKind::LBRACKET => token,
-                                option => {
-                                    return Err(Box::new(ParseError::MissingOpeningBracket(option)))
-                                }
-                            }
-                        };
-
-                        let left = Box::new(array);
-
-                        let index = Box::new({
-                            let index = Parser::parse_expression(lexer, Precedence::LOWEST)?;
-
-                            match lexer.next() {
-                                Some(token) if token.kind == TokenKind::RBRACKET => (),
-                                option => {
-                                    return Err(Box::new(ParseError::MissingClosingBracket(
-                                        option,
-                                    )));
-                                }
-                            };
-
-                            index
-                        });
-
-                        Expression::INDEX(IndexExpression { token, left, index })
-                    }
-                    _ => array,
-                }
-            }
-            Some(token) if token.kind == TokenKind::IF => {
-                let condition = Box::new(Parser::parse_expression(lexer, Precedence::LOWEST)?);
-
-                let consequence = match Parser::parse_statement(lexer)? {
-                    Statement::Block(expression) => expression,
-                    Statement::Let(expression) => {
-                        return Err(Box::new(ParseError::MissingBlockStatement(Some(
-                            expression.token,
-                        ))))
-                    }
-                    Statement::Return(expression) => {
-                        return Err(Box::new(ParseError::MissingBlockStatement(Some(
-                            expression.token,
-                        ))))
-                    }
-                    Statement::Expression(expression) => {
-                        return Err(Box::new(ParseError::MissingBlockStatement(Some(
-                            expression.token,
-                        ))))
-                    }
-                };
-
-                let alternative = match lexer.peek() {
-                    Some(token) if token.kind == TokenKind::ELSE => {
-                        lexer.next().unwrap();
-
-                        let block = match Parser::parse_statement(lexer)? {
-                            Statement::Block(expression) => expression,
-                            Statement::Let(expression) => {
-                                return Err(Box::new(ParseError::MissingBlockStatement(Some(
-                                    expression.token,
-                                ))))
-                            }
-                            Statement::Return(expression) => {
-                                return Err(Box::new(ParseError::MissingBlockStatement(Some(
-                                    expression.token,
-                                ))))
-                            }
-                            Statement::Expression(expression) => {
-                                return Err(Box::new(ParseError::MissingBlockStatement(Some(
-                                    expression.token,
-                                ))))
-                            }
-                        };
-
-                        Some(block)
-                    }
-                    _ => None,
-                };
-
-                Expression::IF(IfExpression {
-                    token,
-                    condition,
-                    consequence,
-                    alternative,
-                })
-            }
-            Some(token) if token.kind == TokenKind::FUNCTION => {
-                let parameters = {
-                    match lexer.next() {
-                        Some(token) if token.kind == TokenKind::LPAREN => (),
-                        Some(token) => {
-                            return Err(Box::new(ParseError::MissingOpeningParenthesis(Some(
-                                token,
-                            ))))
-                        }
-                        None => return Err(Box::new(ParseError::MissingOpeningParenthesis(None))),
-                    }
-
-                    let mut parameters = Vec::new();
-
-                    while let Some(token) = lexer.peek() {
-                        if token.kind == TokenKind::RPAREN {
-                            break;
-                        }
-
-                        match lexer.next() {
-                            Some(token) if token.kind == TokenKind::IDENT => {
-                                let value = token.literal.clone();
-                                parameters.push(IdentExpression { token, value });
-                            }
-                            Some(token) => {
-                                return Err(Box::new(ParseError::MissingIdentifier(Some(token))))
-                            }
-                            None => return Err(Box::new(ParseError::MissingIdentifier(None))),
-                        }
-
-                        match lexer.peek() {
-                            Some(token) if token.kind == TokenKind::COMMA => {
-                                lexer.next().unwrap();
-                            }
-                            _ => continue,
-                        }
-                    }
-
-                    match lexer.next() {
-                        Some(token) if token.kind == TokenKind::RPAREN => (),
-                        Some(token) => {
-                            return Err(Box::new(ParseError::MissingClosingParenthesis(Some(
-                                token,
-                            ))))
-                        }
-                        None => return Err(Box::new(ParseError::MissingClosingParenthesis(None))),
-                    }
-
-                    parameters
-                };
-
-                let body = match Parser::parse_statement(lexer)? {
-                    Statement::Block(expression) => expression,
-                    Statement::Let(expression) => {
-                        return Err(Box::new(ParseError::MissingBlockStatement(Some(
-                            expression.token,
-                        ))))
-                    }
-                    Statement::Return(expression) => {
-                        return Err(Box::new(ParseError::MissingBlockStatement(Some(
-                            expression.token,
-                        ))))
-                    }
-                    Statement::Expression(expression) => {
-                        return Err(Box::new(ParseError::MissingBlockStatement(Some(
-                            expression.token,
-                        ))))
-                    }
-                };
-
-                let function = Expression::FUNCTION(FunctionExpression {
-                    token: token.clone(),
-                    parameters,
-                    body,
-                });
-
-                match lexer.peek() {
-                    Some(next) if next.kind == TokenKind::LPAREN => {
-                        let function = Box::new(function);
-
-                        let arguments = {
-                            match lexer.next() {
-                                Some(token) if token.kind == TokenKind::LPAREN => (),
-                                Some(token) => {
-                                    return Err(Box::new(ParseError::MissingOpeningParenthesis(
-                                        Some(token),
-                                    )))
-                                }
-                                None => {
-                                    return Err(Box::new(ParseError::MissingOpeningParenthesis(
-                                        None,
-                                    )))
-                                }
-                            }
-
-                            let mut arguments = Vec::new();
-
-                            while let Some(token) = lexer.peek() {
-                                if token.kind == TokenKind::RPAREN {
-                                    break;
-                                }
-
-                                arguments
-                                    .push(Parser::parse_expression(lexer, Precedence::LOWEST)?);
-
-                                match lexer.peek() {
-                                    Some(token) if token.kind == TokenKind::COMMA => {
-                                        lexer.next().unwrap();
-                                    }
-                                    _ => continue,
-                                }
-                            }
-
-                            match lexer.next() {
-                                Some(token) if token.kind == TokenKind::RPAREN => (),
-                                Some(token) => {
-                                    return Err(Box::new(ParseError::MissingClosingParenthesis(
-                                        Some(token),
-                                    )))
-                                }
-                                None => {
-                                    return Err(Box::new(ParseError::MissingClosingParenthesis(
-                                        None,
-                                    )))
-                                }
-                            }
-
-                            arguments
-                        };
-
-                        Expression::CALL(CallExpression {
-                            token,
-                            function,
-                            arguments,
-                        })
-                    }
-                    _ => function,
-                }
-            }
-            Some(token) if token.kind == TokenKind::MINUS || token.kind == TokenKind::BANG => {
-                let right = Box::new(Parser::parse_expression(lexer, Precedence::PREFIX)?);
-
-                Expression::PREFIX(PrefixExpression {
-                    operator: token,
-                    right,
-                })
-            }
-            Some(token) => return Err(Box::new(ParseError::UnexpectedToken(token))),
-            None => return Err(Box::new(ParseError::MissingToken)),
-        };
-
-        while let Some(next) = lexer.peek() {
-            if precedence >= Precedence::from(&next.kind) {
-                break;
-            }
-
-            let operator = lexer.next().unwrap();
-            let right = Parser::parse_expression(lexer, Precedence::from(&operator.kind))?;
-
-            left = Expression::INFIX(InfixExpression {
-                operator,
-                left: Box::new(left),
-                right: Box::new(right),
-            });
-        }
-
-        Ok(left)
-    }
-
-    fn parse_statement(lexer: &mut Lexer) -> Result<Statement, Box<dyn Error>> {
-        match lexer.peek() {
-            Some(token) if token.kind == TokenKind::LBRACE => {
-                let token = match lexer.next() {
-                    Some(token) if token.kind == TokenKind::LBRACE => token,
-                    Some(token) => {
-                        return Err(Box::new(ParseError::MissingOpeningBrace(Some(token))))
-                    }
-                    None => return Err(Box::new(ParseError::MissingOpeningBrace(None))),
-                };
-
-                let mut statements = Vec::new();
-
-                while let Some(token) = lexer.peek() {
-                    if token.kind == TokenKind::RBRACE {
-                        break;
-                    }
-
-                    statements.push(Parser::parse_statement(lexer)?);
-                }
-
-                match lexer.next() {
-                    Some(token) if token.kind == TokenKind::RBRACE => (),
-                    Some(token) => {
-                        return Err(Box::new(ParseError::MissingClosingBrace(Some(token))))
-                    }
-                    None => return Err(Box::new(ParseError::MissingClosingBrace(None))),
-                }
-
-                Ok(Statement::Block(BlockStatement { token, statements }))
-            }
-            Some(token) if token.kind == TokenKind::LET => {
-                let token = match lexer.next() {
-                    Some(token) if token.kind == TokenKind::LET => token,
-                    Some(token) => {
-                        return Err(Box::new(ParseError::MissingLetKeyword(Some(token))))
-                    }
-                    None => return Err(Box::new(ParseError::MissingLetKeyword(None))),
-                };
-
-                let identifier = match lexer.next() {
-                    Some(token) if token.kind == TokenKind::IDENT => token.literal,
-                    Some(token) => {
-                        return Err(Box::new(ParseError::MissingIdentifier(Some(token))))
-                    }
-                    None => return Err(Box::new(ParseError::MissingIdentifier(None))),
-                };
-
-                match lexer.next() {
-                    Some(token) if token.kind == TokenKind::ASSIGN => (),
-                    Some(token) => {
-                        return Err(Box::new(ParseError::MissingAssignmentOperator(Some(token))))
-                    }
-                    None => return Err(Box::new(ParseError::MissingAssignmentOperator(None))),
-                }
-
-                let expression = Parser::parse_expression(lexer, Precedence::LOWEST)?;
-
-                match lexer.next() {
-                    Some(token) if token.kind == TokenKind::SEMICOLON => (),
-                    Some(token) => return Err(Box::new(ParseError::MissingSemicolon(Some(token)))),
-                    None => return Err(Box::new(ParseError::MissingSemicolon(None))),
-                }
-
-                Ok(Statement::Let(LetStatement {
-                    token,
-                    identifier,
-                    expression,
-                }))
-            }
-            Some(token) if token.kind == TokenKind::RETURN => {
-                let token = match lexer.next() {
-                    Some(token) if token.kind == TokenKind::RETURN => token,
-                    Some(token) => {
-                        return Err(Box::new(ParseError::MissingReturnKeyword(Some(token))))
-                    }
-                    None => return Err(Box::new(ParseError::MissingReturnKeyword(None))),
-                };
-
-                let expression = Parser::parse_expression(lexer, Precedence::LOWEST)?;
-
-                match lexer.next() {
-                    Some(token) if token.kind == TokenKind::SEMICOLON => (),
-                    Some(token) => return Err(Box::new(ParseError::MissingSemicolon(Some(token)))),
-                    None => return Err(Box::new(ParseError::MissingSemicolon(None))),
-                }
-
-                Ok(Statement::Return(ReturnStatement { token, expression }))
-            }
-            _ => {
-                let token = match lexer.peek() {
-                    Some(token) => token,
-                    None => return Err(Box::new(ParseError::MissingToken)),
-                }
-                .clone();
-
-                let expression = Parser::parse_expression(lexer, Precedence::LOWEST)?;
-
-                match lexer.next() {
-                    Some(token) if token.kind == TokenKind::SEMICOLON => (),
-                    Some(token) => return Err(Box::new(ParseError::MissingSemicolon(Some(token)))),
-                    None => return Err(Box::new(ParseError::MissingSemicolon(None))),
-                }
-
-                Ok(Statement::Expression(ExpressionStatement {
-                    token,
-                    expression,
-                }))
-            }
-        }
     }
 
     pub fn parse(&mut self) -> Result<Program, Box<dyn Error>> {
@@ -707,19 +28,765 @@ impl<'a> Parser<'a> {
 
             program
                 .statements
-                .push(Parser::parse_statement(&mut self.lexer)?);
+                .push(StatementParser::parse(&mut self.lexer)?);
         }
 
         Ok(program)
     }
 }
 
+#[derive(Debug)]
+struct ParsingRule<'a, T> {
+    pub accept: fn(token: &Token) -> bool,
+    pub parse: fn(lexer: &mut Lexer, previous: &Option<T>) -> Result<T, ParseError>,
+    pub dependents: Option<&'a [ParsingRule<'a, T>]>,
+}
+
+impl<'a, T> ParsingRule<'a, T> {
+    fn parse(
+        previous: &Option<T>,
+        rule: &ParsingRule<T>,
+        lexer: &mut Lexer,
+    ) -> Result<Option<T>, ParseError> {
+        if let Some(token) = lexer.peek() {
+            if (rule.accept)(token) {
+                let statement = Some((rule.parse)(lexer, previous)?);
+
+                if let Some(dependents) = &rule.dependents {
+                    for dependent in dependents.iter() {
+                        if let Some(dependent_statement) =
+                            ParsingRule::parse(&statement, dependent, lexer)?
+                        {
+                            return Ok(Some(dependent_statement));
+                        }
+                    }
+                }
+
+                return Ok(statement);
+            }
+        }
+
+        Ok(None)
+    }
+}
+
+mod statements {
+    use crate::{
+        BlockStatement, ExpressionStatement, LetStatement, Lexer, ReturnStatement, Statement,
+        TokenKind,
+    };
+
+    use super::{
+        errors::ParseError,
+        expressions::{ExpressionParser, Precedence},
+        ParsingRule,
+    };
+
+    pub struct StatementParser;
+
+    impl StatementParser {
+        pub fn parse(lexer: &mut Lexer) -> Result<Statement, ParseError> {
+            for rule in &STATEMENT_RULES {
+                if let Some(statement) = ParsingRule::parse(&None, rule, lexer)? {
+                    return Ok(statement);
+                }
+            }
+
+            match lexer.next() {
+                Some(token) => Err(ParseError::UnrecognizedToken(token)),
+                None => Err(ParseError::MissingToken),
+            }
+        }
+    }
+
+    // order matters
+    // from with most constraints to least constraints
+    const STATEMENT_RULES: [ParsingRule<Statement>; 4] = [
+        BLOCK_STATEMENT_RULE,
+        LET_STATEMENT_RULE,
+        RETURN_STATEMENT_RULE,
+        EXPRESSION_STATEMENT_RULE,
+    ];
+
+    const BLOCK_STATEMENT_RULE: ParsingRule<Statement> = ParsingRule {
+        accept: |token| token.kind == TokenKind::LBRACE,
+        parse: |lexer, _| {
+            let token = match lexer.next() {
+                Some(token) if token.kind == TokenKind::LBRACE => token,
+                option => return Err(ParseError::MissingOpeningBrace(option)),
+            };
+
+            let mut statements = Vec::new();
+
+            while let Some(token) = lexer.peek() {
+                if token.kind == TokenKind::RBRACE {
+                    break;
+                }
+
+                statements.push(StatementParser::parse(lexer)?);
+            }
+
+            match lexer.next() {
+                Some(token) if token.kind == TokenKind::RBRACE => token,
+                option => return Err(ParseError::MissingClosingBrace(option)),
+            };
+
+            Ok(Statement::Block(BlockStatement { token, statements }))
+        },
+        dependents: None,
+    };
+
+    const LET_STATEMENT_RULE: ParsingRule<Statement> = ParsingRule {
+        accept: |token| token.kind == TokenKind::LET,
+        parse: |lexer, _| {
+            let token = match lexer.next() {
+                Some(token) if token.kind == TokenKind::LET => token,
+                option => return Err(ParseError::MissingLetKeyword(option)),
+            };
+
+            let identifier = match lexer.next() {
+                Some(token) if token.kind == TokenKind::IDENT => token.literal,
+                option => return Err(ParseError::MissingIdentifier(option)),
+            };
+
+            match lexer.next() {
+                Some(token) if token.kind == TokenKind::ASSIGN => token,
+                option => return Err(ParseError::MissingAssignmentOperator(option)),
+            };
+
+            let expression = ExpressionParser::parse(lexer, &Precedence::LOWEST)?;
+
+            match lexer.next() {
+                Some(token) if token.kind == TokenKind::SEMICOLON => token,
+                option => return Err(ParseError::MissingSemicolon(option)),
+            };
+
+            Ok(Statement::Let(LetStatement {
+                token,
+                identifier,
+                expression,
+            }))
+        },
+        dependents: None,
+    };
+
+    const RETURN_STATEMENT_RULE: ParsingRule<Statement> = ParsingRule {
+        accept: |token| token.kind == TokenKind::RETURN,
+        parse: |lexer, _| {
+            let token = match lexer.next() {
+                Some(token) if token.kind == TokenKind::RETURN => token,
+                option => return Err(ParseError::MissingReturnKeyword(option)),
+            };
+
+            let expression = ExpressionParser::parse(lexer, &Precedence::LOWEST)?;
+
+            match lexer.next() {
+                Some(token) if token.kind == TokenKind::SEMICOLON => token,
+                option => return Err(ParseError::MissingSemicolon(option)),
+            };
+
+            Ok(Statement::Return(ReturnStatement { token, expression }))
+        },
+        dependents: None,
+    };
+
+    const EXPRESSION_STATEMENT_RULE: ParsingRule<Statement> = ParsingRule {
+        accept: |_| true,
+        parse: |lexer, _| {
+            let token = lexer.peek().unwrap().clone();
+
+            let expression = ExpressionParser::parse(lexer, &Precedence::LOWEST)?;
+
+            match lexer.next() {
+                Some(token) if token.kind == TokenKind::SEMICOLON => token,
+                option => return Err(ParseError::MissingSemicolon(option)),
+            };
+
+            return Ok(Statement::Expression(ExpressionStatement {
+                token,
+                expression,
+            }));
+        },
+        dependents: None,
+    };
+}
+
+mod expressions {
+    use crate::{
+        ArrayExpression, BooleanExpression, CallExpression, Expression, FunctionExpression,
+        IdentExpression, IfExpression, IndexExpression, InfixExpression, IntExpression, Lexer,
+        PrefixExpression, Statement, StringExpression, TokenKind,
+    };
+
+    use super::{errors::ParseError, statements::StatementParser, ParsingRule};
+
+    #[derive(Debug, PartialEq, PartialOrd, Eq, Ord, Clone)]
+    #[allow(dead_code)]
+    pub enum Precedence {
+        LOWEST = 1,
+        EQUIVALENCE = 2, // equivalence: == or !=
+        COMPARISON = 3,  // comparison: > or < or >= or <=
+        SUM = 4,         // sum: + or -
+        PRODUCT = 5,     // product: * or /
+        PREFIX = 6,      // prefix: -x or !x
+        CALL = 7,        // call: func(x)
+    }
+
+    impl From<&TokenKind> for Precedence {
+        fn from(kind: &TokenKind) -> Self {
+            match kind {
+                TokenKind::EQ | TokenKind::NEQ => Precedence::EQUIVALENCE,
+                TokenKind::LT | TokenKind::GT | TokenKind::LTE | TokenKind::GTE => {
+                    Precedence::COMPARISON
+                }
+                TokenKind::PLUS | TokenKind::MINUS => Precedence::SUM,
+                TokenKind::ASTERISK | TokenKind::SLASH => Precedence::PRODUCT,
+                _ => Precedence::LOWEST,
+            }
+        }
+    }
+
+    pub struct ExpressionParser;
+
+    impl ExpressionParser {
+        fn parse_left(lexer: &mut Lexer) -> Result<Expression, ParseError> {
+            for rule in &EXPRESSION_RULES {
+                if let Some(expression) = ParsingRule::parse(&None, rule, lexer)? {
+                    return Ok(expression);
+                }
+            }
+
+            match lexer.next() {
+                Some(token) => Err(ParseError::UnrecognizedToken(token)),
+                None => Err(ParseError::MissingToken),
+            }
+        }
+
+        pub fn parse(lexer: &mut Lexer, precedence: &Precedence) -> Result<Expression, ParseError> {
+            let mut left = ExpressionParser::parse_left(lexer)?;
+
+            while let Some(token) = lexer.peek() {
+                if precedence >= &Precedence::from(&token.kind) {
+                    break;
+                }
+
+                let operator = match lexer.next() {
+                    Some(token) => token,
+                    None => return Err(ParseError::MissingToken),
+                };
+
+                let right = ExpressionParser::parse(lexer, &Precedence::from(&operator.kind))?;
+
+                left = Expression::INFIX(InfixExpression {
+                    left: Box::new(left),
+                    operator,
+                    right: Box::new(right),
+                });
+            }
+
+            Ok(left)
+        }
+    }
+
+    // dependent rules should be placed on the rules they depend on not in this slice.
+    const EXPRESSION_RULES: [ParsingRule<Expression>; 9] = [
+        GROUPING_EXPRESSION_RULE,
+        IDENTIFIER_EXPRESSION_RULE,
+        INTEGER_EXPRESSION_RULE,
+        STRING_EXPRESSION_RULE,
+        BOOLEAN_EXPRESSION_RULE,
+        ARRAY_EXPRESSION_RULE,
+        PREFIX_EXPRESSION_RULE,
+        IF_EXPRESSION_RULE,
+        FUNCTION_EXPRESSION_RULE,
+    ];
+
+    const GROUPING_EXPRESSION_RULE: ParsingRule<Expression> = ParsingRule {
+        accept: |token| token.kind == TokenKind::LPAREN,
+        parse: |lexer, _| {
+            match lexer.next() {
+                Some(token) if token.kind == TokenKind::LPAREN => token,
+                option => return Err(ParseError::MissingOpeningParenthesis(option)),
+            };
+
+            let expression = ExpressionParser::parse(lexer, &Precedence::LOWEST)?;
+
+            match lexer.next() {
+                Some(token) if token.kind == TokenKind::RPAREN => token,
+                option => return Err(ParseError::MissingClosingParenthesis(option)),
+            };
+
+            Ok(expression)
+        },
+        dependents: None,
+    };
+
+    const IDENTIFIER_EXPRESSION_RULE: ParsingRule<Expression> = ParsingRule {
+        accept: |token| token.kind == TokenKind::IDENT,
+        parse: |lexer, _| {
+            let token = lexer.next().unwrap();
+            let value = token.literal.clone();
+
+            Ok(Expression::IDENT(IdentExpression { token, value }))
+        },
+        dependents: Some(&[CALL_EXPRESSION_RULE, INDEX_EXPRESSION_RULE]),
+    };
+
+    const INTEGER_EXPRESSION_RULE: ParsingRule<Expression> = ParsingRule {
+        accept: |token| token.kind == TokenKind::INT,
+        parse: |lexer, _| {
+            let token = lexer.next().unwrap();
+
+            let value = match token.literal.parse::<i64>() {
+                Ok(value) => value,
+                Err(_) => return Err(ParseError::IllegalToken(token)),
+            };
+
+            Ok(Expression::INT(IntExpression { token, value }))
+        },
+        dependents: None,
+    };
+
+    const STRING_EXPRESSION_RULE: ParsingRule<Expression> = ParsingRule {
+        accept: |token| token.kind == TokenKind::STRING,
+        parse: |lexer, _| {
+            let token = lexer.next().unwrap();
+            let value = token.literal.clone();
+
+            Ok(Expression::STRING(StringExpression { token, value }))
+        },
+        dependents: None,
+    };
+
+    const BOOLEAN_EXPRESSION_RULE: ParsingRule<Expression> = ParsingRule {
+        accept: |token| token.kind == TokenKind::TRUE || token.kind == TokenKind::FALSE,
+        parse: |lexer, _| {
+            let token = lexer.next().unwrap();
+            let value = token.kind == TokenKind::TRUE;
+
+            Ok(Expression::BOOLEAN(BooleanExpression { token, value }))
+        },
+        dependents: None,
+    };
+
+    const ARRAY_EXPRESSION_RULE: ParsingRule<Expression> = ParsingRule {
+        accept: |token| token.kind == TokenKind::LBRACKET,
+        parse: |lexer, _| {
+            let token = match lexer.next() {
+                Some(token) if token.kind == TokenKind::LBRACKET => token,
+                option => return Err(ParseError::MissingOpeningBracket(option)),
+            };
+
+            let mut elements = Vec::new();
+
+            while let Some(token) = lexer.peek() {
+                if token.kind == TokenKind::RBRACKET {
+                    break;
+                }
+
+                let expression = ExpressionParser::parse(lexer, &Precedence::LOWEST)?;
+
+                elements.push(expression);
+
+                if let Some(token) = lexer.peek() {
+                    if token.kind == TokenKind::COMMA {
+                        lexer.next();
+                    }
+                }
+            }
+
+            match lexer.next() {
+                Some(token) if token.kind == TokenKind::RBRACKET => token,
+                option => return Err(ParseError::MissingClosingBracket(option)),
+            };
+
+            Ok(Expression::ARRAY(ArrayExpression { token, elements }))
+        },
+        dependents: Some(&[INDEX_EXPRESSION_RULE]),
+    };
+
+    const PREFIX_EXPRESSION_RULE: ParsingRule<Expression> = ParsingRule {
+        accept: |token| token.kind == TokenKind::MINUS || token.kind == TokenKind::BANG,
+        parse: |lexer, _| {
+            let operator = lexer.next().unwrap();
+
+            let right = Box::new(ExpressionParser::parse(lexer, &Precedence::PREFIX)?);
+
+            Ok(Expression::PREFIX(PrefixExpression { operator, right }))
+        },
+        dependents: None,
+    };
+
+    const IF_EXPRESSION_RULE: ParsingRule<Expression> = ParsingRule {
+        accept: |token| token.kind == TokenKind::IF,
+        parse: |lexer, _| {
+            let token = lexer.next().unwrap();
+
+            let condition = Box::new(ExpressionParser::parse(lexer, &Precedence::LOWEST)?);
+
+            let consequence = match StatementParser::parse(lexer)? {
+                Statement::Block(expression) => expression,
+                Statement::Let(expression) => {
+                    return Err(ParseError::MissingBlockStatement(Some(expression.token)))
+                }
+                Statement::Return(expression) => {
+                    return Err(ParseError::MissingBlockStatement(Some(expression.token)))
+                }
+                Statement::Expression(expression) => {
+                    return Err(ParseError::MissingBlockStatement(Some(expression.token)))
+                }
+            };
+
+            let alternative = match lexer.peek() {
+                Some(token) if token.kind == TokenKind::ELSE => {
+                    lexer.next().unwrap();
+
+                    match StatementParser::parse(lexer)? {
+                        Statement::Block(expression) => Some(expression),
+                        Statement::Let(expression) => {
+                            return Err(ParseError::MissingBlockStatement(Some(expression.token)))
+                        }
+                        Statement::Return(expression) => {
+                            return Err(ParseError::MissingBlockStatement(Some(expression.token)))
+                        }
+                        Statement::Expression(expression) => {
+                            return Err(ParseError::MissingBlockStatement(Some(expression.token)))
+                        }
+                    }
+                }
+                _ => None,
+            };
+
+            Ok(Expression::IF(IfExpression {
+                token,
+                condition,
+                consequence,
+                alternative,
+            }))
+        },
+        dependents: None,
+    };
+
+    const FUNCTION_EXPRESSION_RULE: ParsingRule<Expression> = ParsingRule {
+        accept: |token| token.kind == TokenKind::FUNCTION,
+        parse: |lexer, _| {
+            let token = lexer.next().unwrap();
+
+            let parameters = {
+                match lexer.next() {
+                    Some(token) if token.kind == TokenKind::LPAREN => token,
+                    option => return Err(ParseError::MissingOpeningParenthesis(option)),
+                };
+
+                let mut parameters = Vec::new();
+
+                while let Some(token) = lexer.peek() {
+                    if token.kind == TokenKind::RPAREN {
+                        break;
+                    }
+
+                    match lexer.next() {
+                        Some(token) if token.kind == TokenKind::IDENT => {
+                            let value = token.literal.clone();
+
+                            parameters.push(IdentExpression { token, value });
+                        }
+                        option => return Err(ParseError::MissingIdentifier(option)),
+                    }
+
+                    if let Some(token) = lexer.peek() {
+                        if token.kind == TokenKind::COMMA {
+                            lexer.next();
+                        }
+                    }
+                }
+
+                match lexer.next() {
+                    Some(token) if token.kind == TokenKind::RPAREN => token,
+                    option => return Err(ParseError::MissingClosingParenthesis(option)),
+                };
+
+                parameters
+            };
+
+            let body = match StatementParser::parse(lexer)? {
+                Statement::Block(expression) => expression,
+                Statement::Let(expression) => {
+                    return Err(ParseError::MissingBlockStatement(Some(expression.token)))
+                }
+                Statement::Return(expression) => {
+                    return Err(ParseError::MissingBlockStatement(Some(expression.token)))
+                }
+                Statement::Expression(expression) => {
+                    return Err(ParseError::MissingBlockStatement(Some(expression.token)))
+                }
+            };
+
+            Ok(Expression::FUNCTION(FunctionExpression {
+                token,
+                parameters,
+                body,
+            }))
+        },
+        dependents: Some(&[CALL_EXPRESSION_RULE]),
+    };
+
+    const CALL_EXPRESSION_RULE: ParsingRule<Expression> = ParsingRule {
+        accept: |token| token.kind == TokenKind::LPAREN,
+        parse: |lexer, previous| {
+            let token = match &previous {
+                Some(Expression::IDENT(ident)) => ident.token.clone(),
+                Some(Expression::FUNCTION(func)) => func.token.clone(),
+                _ => unreachable!(),
+            };
+
+            let function = match &previous {
+                Some(Expression::IDENT(ident)) => Box::new(Expression::IDENT(ident.clone())),
+                Some(Expression::FUNCTION(func)) => Box::new(Expression::FUNCTION(func.clone())),
+                _ => unreachable!(),
+            };
+
+            let arguments = {
+                match lexer.next() {
+                    Some(token) if token.kind == TokenKind::LPAREN => token,
+                    option => return Err(ParseError::MissingOpeningParenthesis(option)),
+                };
+
+                let mut arguments = Vec::new();
+
+                while let Some(token) = lexer.peek() {
+                    if token.kind == TokenKind::RPAREN {
+                        break;
+                    }
+
+                    let expression = ExpressionParser::parse(lexer, &Precedence::LOWEST)?;
+
+                    arguments.push(expression);
+
+                    if let Some(token) = lexer.peek() {
+                        if token.kind == TokenKind::COMMA {
+                            lexer.next();
+                        }
+                    }
+                }
+
+                match lexer.next() {
+                    Some(token) if token.kind == TokenKind::RPAREN => token,
+                    option => return Err(ParseError::MissingClosingParenthesis(option)),
+                };
+
+                arguments
+            };
+
+            Ok(Expression::CALL(CallExpression {
+                token,
+                function,
+                arguments,
+            }))
+        },
+        dependents: None,
+    };
+
+    const INDEX_EXPRESSION_RULE: ParsingRule<Expression> = ParsingRule {
+        accept: |token| token.kind == TokenKind::LBRACKET,
+        parse: |lexer, previous| {
+            let token = match previous {
+                Some(Expression::IDENT(ident)) => ident.token.clone(),
+                Some(Expression::ARRAY(array)) => array.token.clone(),
+                _ => unreachable!(),
+            };
+
+            let left = match previous {
+                Some(Expression::IDENT(ident)) => Box::new(Expression::IDENT(ident.clone())),
+                Some(Expression::ARRAY(array)) => Box::new(Expression::ARRAY(array.clone())),
+                _ => unreachable!(),
+            };
+
+            match lexer.next() {
+                Some(token) if token.kind == TokenKind::LBRACKET => token,
+                option => return Err(ParseError::MissingOpeningBracket(option)),
+            };
+
+            let index = Box::new(ExpressionParser::parse(lexer, &Precedence::LOWEST)?);
+
+            match lexer.next() {
+                Some(token) if token.kind == TokenKind::RBRACKET => token,
+                option => return Err(ParseError::MissingClosingBracket(option)),
+            };
+
+            Ok(Expression::INDEX(IndexExpression { token, left, index }))
+        },
+        dependents: None,
+    };
+}
+
+mod errors {
+    use std::{error::Error, fmt::Display};
+
+    use crate::Token;
+
+    #[derive(Debug)]
+    pub enum ParseError {
+        MissingToken,
+        MissingOpeningParenthesis(Option<Token>),
+        MissingClosingParenthesis(Option<Token>),
+        MissingOpeningBrace(Option<Token>),
+        MissingClosingBrace(Option<Token>),
+        MissingOpeningBracket(Option<Token>),
+        MissingClosingBracket(Option<Token>),
+        MissingLetKeyword(Option<Token>),
+        MissingAssignmentOperator(Option<Token>),
+        MissingReturnKeyword(Option<Token>),
+        MissingSemicolon(Option<Token>),
+        MissingIdentifier(Option<Token>),
+        MissingBlockStatement(Option<Token>),
+        UnrecognizedToken(Token),
+        IllegalToken(Token),
+    }
+
+    impl Error for ParseError {
+        fn description(&self) -> &str {
+            match self {
+                ParseError::MissingToken => "missing a token",
+                ParseError::MissingOpeningParenthesis(_) => "missing opening parenthesis",
+                ParseError::MissingClosingParenthesis(_) => "missing closing parenthesis",
+                ParseError::MissingOpeningBrace(_) => "missing opening brace",
+                ParseError::MissingClosingBrace(_) => "missing closing brace",
+                ParseError::MissingOpeningBracket(_) => "missing opening bracket",
+                ParseError::MissingClosingBracket(_) => "missing closing bracket",
+                ParseError::MissingLetKeyword(_) => "missing let keyword",
+                ParseError::MissingAssignmentOperator(_) => "missing assignment operator",
+                ParseError::MissingReturnKeyword(_) => "missing return keyword",
+                ParseError::MissingSemicolon(_) => "missing semicolon",
+                ParseError::MissingIdentifier(_) => "missing identifier",
+                ParseError::MissingBlockStatement(_) => "expected block statement",
+                ParseError::UnrecognizedToken(_) => "unrecognized token",
+                ParseError::IllegalToken(_) => "illegal token",
+            }
+        }
+    }
+
+    impl Display for ParseError {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            match self {
+                ParseError::MissingToken => write!(f, "missing a token"),
+                ParseError::MissingOpeningParenthesis(token) => match token {
+                    Some(token) => write!(
+                        f,
+                        "expected opening parenthesis, got {} at {}:{}",
+                        token.literal, token.span.line, token.span.column
+                    ),
+                    None => write!(f, "expected opening parenthesis, got EOF"),
+                },
+                ParseError::MissingClosingParenthesis(token) => match token {
+                    Some(token) => write!(
+                        f,
+                        "expected closing parenthesis, got {} at {}:{}",
+                        token.literal, token.span.line, token.span.column
+                    ),
+                    None => write!(f, "expected closing parenthesis, got EOF"),
+                },
+                ParseError::MissingOpeningBrace(token) => match token {
+                    Some(token) => write!(
+                        f,
+                        "expected opening brace, got {} at {}:{}",
+                        token.literal, token.span.line, token.span.column
+                    ),
+                    None => write!(f, "expected opening brace, got EOF"),
+                },
+                ParseError::MissingClosingBrace(token) => match token {
+                    Some(token) => write!(
+                        f,
+                        "expected closing brace, got {} at {}:{}",
+                        token.literal, token.span.line, token.span.column
+                    ),
+                    None => write!(f, "expected closing brace, got EOF"),
+                },
+                ParseError::MissingOpeningBracket(token) => match token {
+                    Some(token) => write!(
+                        f,
+                        "expected opening bracket, got {} at {}:{}",
+                        token.literal, token.span.line, token.span.column
+                    ),
+                    None => write!(f, "expected opening bracket, got EOF"),
+                },
+                ParseError::MissingClosingBracket(token) => match token {
+                    Some(token) => write!(
+                        f,
+                        "expected closing bracket, got {} at {}:{}",
+                        token.literal, token.span.line, token.span.column
+                    ),
+                    None => write!(f, "expected closing bracket, got EOF"),
+                },
+                ParseError::MissingLetKeyword(token) => match token {
+                    Some(token) => write!(
+                        f,
+                        "expected let keyword, got {} at {}:{}",
+                        token.literal, token.span.line, token.span.column
+                    ),
+                    None => write!(f, "expected let keyword, got EOF"),
+                },
+                ParseError::MissingAssignmentOperator(token) => match token {
+                    Some(token) => write!(
+                        f,
+                        "expected assignment operator, got {} at {}:{}",
+                        token.literal, token.span.line, token.span.column
+                    ),
+                    None => write!(f, "expected assignment operator, got EOF"),
+                },
+                ParseError::MissingReturnKeyword(token) => match token {
+                    Some(token) => write!(
+                        f,
+                        "expected return keyword, got {} at {}:{}",
+                        token.literal, token.span.line, token.span.column
+                    ),
+                    None => write!(f, "expected return keyword, got EOF"),
+                },
+                ParseError::MissingSemicolon(token) => match token {
+                    Some(token) => write!(
+                        f,
+                        "expected semicolon, got {} at {}:{}",
+                        token.literal, token.span.line, token.span.column
+                    ),
+                    None => write!(f, "expected semicolon, got EOF"),
+                },
+                ParseError::MissingIdentifier(token) => match token {
+                    Some(token) => write!(
+                        f,
+                        "expected identifier, got {} at {}:{}",
+                        token.literal, token.span.line, token.span.column
+                    ),
+                    None => write!(f, "expected identifier, got EOF"),
+                },
+                ParseError::MissingBlockStatement(token) => match token {
+                    Some(token) => write!(
+                        f,
+                        "expected block statement, got {} at {}:{}",
+                        token.literal, token.span.line, token.span.column
+                    ),
+                    None => write!(f, "expected block statement, got EOF"),
+                },
+                ParseError::UnrecognizedToken(token) => write!(
+                    f,
+                    "unrecognized token {} at {}:{}",
+                    token.literal, token.span.line, token.span.column
+                ),
+                ParseError::IllegalToken(token) => write!(
+                    f,
+                    "illegal token {} at {}:{}",
+                    token.literal, token.span.line, token.span.column
+                ),
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use crate::{
-        BooleanExpression, Expression, IdentExpression, IfExpression, InfixExpression,
-        IntExpression, LetStatement, Lexer, PrefixExpression, ReturnStatement, Statement,
-        StringExpression, TokenKind,
+        ArrayExpression, BooleanExpression, Expression, ExpressionStatement, FunctionExpression,
+        IdentExpression, IfExpression, InfixExpression, IntExpression, LetStatement, Lexer,
+        PrefixExpression, ReturnStatement, Statement, StringExpression, TokenKind,
     };
 
     use super::*;
