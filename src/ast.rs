@@ -10,6 +10,7 @@ pub struct TokenSpan {
 #[derive(Debug, PartialEq, Clone)]
 pub enum TokenKind {
     // special
+    WHITESPACE,
     ILLEGAL,
     EOF,
 
