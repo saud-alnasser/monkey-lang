@@ -17,7 +17,7 @@ pub enum Error {
     MissingSemicolon(Option<Token>),
     MissingIdentifier(Option<Token>),
     MissingBlockStatement(Option<Token>),
-    UnrecognizedToken(Token),
+    UnexpectedToken(Token),
     IllegalToken(Token),
 }
 
@@ -121,9 +121,9 @@ impl Display for Error {
                 ),
                 None => write!(f, "expected block statement, got EOF"),
             },
-            Error::UnrecognizedToken(token) => write!(
+            Error::UnexpectedToken(token) => write!(
                 f,
-                "unrecognized token {} at {}:{}",
+                "unexpected token {} at {}:{}",
                 token.literal, token.span.line, token.span.column
             ),
             Error::IllegalToken(token) => write!(

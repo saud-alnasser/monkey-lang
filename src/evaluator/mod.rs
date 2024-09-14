@@ -1,109 +1,16 @@
-use std::{cell::RefCell, error::Error, fmt::Display, rc::Rc};
+mod datatype;
+pub mod error;
 
-use crate::{
-    BlockStatement, Environment, Expression, IdentExpression, Program, Statement, Token, TokenKind,
-};
+use std::{cell::RefCell, rc::Rc};
 
-#[derive(Debug, PartialEq, Clone)]
-pub enum DataType {
-    INT(i64),
-    STRING(Box<str>),
-    BOOLEAN(bool),
-    ARRAY(Vec<DataType>),
-    RETURN(Box<DataType>),
-    IDENT(Box<str>),
-    FUNCTION {
-        parameters: Vec<IdentExpression>,
-        body: BlockStatement,
-        env: Rc<RefCell<Environment>>,
-    },
-    BUILTIN {
-        func: fn(Vec<DataType>) -> Result<DataType, Box<dyn Error>>,
-    },
-    UNDEFINED,
-    NULL,
-}
-
-impl Display for DataType {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            DataType::INT(value) => write!(f, "{}", value),
-            DataType::STRING(value) => write!(f, "{}", value),
-            DataType::BOOLEAN(value) => write!(f, "{}", value),
-            DataType::ARRAY(value) => write!(
-                f,
-                "[{}]",
-                value
-                    .iter()
-                    .map(|element| element.to_string())
-                    .collect::<Vec<String>>()
-                    .join(", ")
-            ),
-            DataType::RETURN(value) => write!(f, "{}", value),
-            DataType::IDENT(value) => write!(f, "{}", value),
-            DataType::FUNCTION { .. } => write!(f, ""),
-            DataType::BUILTIN { .. } => write!(f, ""),
-            DataType::UNDEFINED => write!(f, ""),
-            DataType::NULL => write!(f, "null"),
-        }
-    }
-}
-
-#[derive(Debug)]
-pub enum EvaluationError {
-    TypeMismatch(DataType, Token, DataType),
-    IndexTypeMismatch(DataType, Token),
-    UnknownOperator(Token),
-    UndefinedVariable(DataType),
-}
-
-impl Error for EvaluationError {
-    fn description(&self) -> &str {
-        match self {
-            EvaluationError::TypeMismatch(_, _, _) => "type mismatch",
-            EvaluationError::IndexTypeMismatch(_, _) => "index type mismatch",
-            EvaluationError::UnknownOperator(_) => "unknown operator",
-            EvaluationError::UndefinedVariable(_) => "undefined variable",
-        }
-    }
-}
-
-impl Display for EvaluationError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            EvaluationError::TypeMismatch(left, token, right) => write!(
-                f,
-                "type mismatch {:?} {} {:?} at {}:{}",
-                left, token.literal, right, token.span.line, token.span.column
-            ),
-            EvaluationError::IndexTypeMismatch(value, token) => {
-                write!(
-                    f,
-                    "index type mismatch got={:?}, want=INT at {}:{}",
-                    value, token.span.line, token.span.column
-                )
-            }
-            EvaluationError::UnknownOperator(token) => {
-                write!(
-                    f,
-                    "unknown operator {} at {}:{}",
-                    token.literal, token.span.line, token.span.column
-                )
-            }
-            EvaluationError::UndefinedVariable(value) => {
-                write!(f, "unknown identifier {}", value)
-            }
-        }
-    }
-}
+pub use self::datatype::*;
+pub use self::error::*;
+use crate::{Environment, Expression, Program, Statement, TokenKind};
 
 pub struct Evaluator;
 
 impl Evaluator {
-    fn eval_expression(
-        expression: Expression,
-        env: Rc<RefCell<Environment>>,
-    ) -> Result<DataType, Box<dyn Error>> {
+    fn eval_expression(expression: Expression, env: Rc<RefCell<Environment>>) -> Result<DataType> {
         match expression {
             Expression::INT(expression) => {
                 return Ok(DataType::INT(expression.value));
@@ -138,10 +45,7 @@ impl Evaluator {
                     return Ok(array[*index as usize].clone());
                 }
 
-                Err(Box::new(EvaluationError::IndexTypeMismatch(
-                    index,
-                    expression.token,
-                )))
+                Err(Error::IndexTypeMismatch(index, expression.token))
             }
             Expression::PREFIX(expression) => {
                 let right = Evaluator::eval_expression(*expression.right, Rc::clone(&env))?;
@@ -162,9 +66,7 @@ impl Evaluator {
                     };
                 }
 
-                Err(Box::new(EvaluationError::UnknownOperator(
-                    expression.operator,
-                )))
+                Err(Error::UnknownOperator(expression.operator))
             }
             Expression::INFIX(expression) => {
                 let left = Evaluator::eval_expression(*expression.left, Rc::clone(&env))?;
@@ -183,7 +85,7 @@ impl Evaluator {
                         TokenKind::GTE => return Ok(DataType::BOOLEAN(left >= right)),
                         TokenKind::EQ => return Ok(DataType::BOOLEAN(left == right)),
                         TokenKind::NEQ => return Ok(DataType::BOOLEAN(left != right)),
-                        _ => return Err(Box::new(EvaluationError::UnknownOperator(operator))),
+                        _ => return Err(Error::UnknownOperator(operator)),
                     }
                 }
 
@@ -191,7 +93,7 @@ impl Evaluator {
                     match operator.kind {
                         TokenKind::EQ => return Ok(DataType::BOOLEAN(left == right)),
                         TokenKind::NEQ => return Ok(DataType::BOOLEAN(left != right)),
-                        _ => return Err(Box::new(EvaluationError::UnknownOperator(operator))),
+                        _ => return Err(Error::UnknownOperator(operator)),
                     }
                 }
 
@@ -203,9 +105,7 @@ impl Evaluator {
                     }
                 }
 
-                Err(Box::new(EvaluationError::TypeMismatch(
-                    left, operator, right,
-                )))
+                Err(Error::TypeMismatch(left, operator, right))
             }
             Expression::IF(expression) => {
                 let condition =
@@ -230,9 +130,7 @@ impl Evaluator {
             }
             Expression::IDENT(expression) => match env.borrow().get(&expression.value) {
                 Some(value) => Ok(value.clone()),
-                None => Err(Box::new(EvaluationError::UndefinedVariable(
-                    DataType::IDENT(expression.value),
-                ))),
+                None => Err(Error::UndefinedVariable(DataType::IDENT(expression.value))),
             },
             Expression::FUNCTION(expression) => Ok(DataType::FUNCTION {
                 parameters: expression.parameters,
@@ -269,18 +167,15 @@ impl Evaluator {
                 }
 
                 if let DataType::BUILTIN { func } = function {
-                    return func(arguments);
+                    return func(arguments).map_err(|error| Error::Builtin(error));
                 }
 
-                Err(Box::new(EvaluationError::UnknownOperator(expression.token)))
+                Err(Error::UnknownOperator(expression.token))
             }
         }
     }
 
-    fn eval_statement(
-        statement: Statement,
-        env: Rc<RefCell<Environment>>,
-    ) -> Result<DataType, Box<dyn Error>> {
+    fn eval_statement(statement: Statement, env: Rc<RefCell<Environment>>) -> Result<DataType> {
         match statement {
             Statement::Block(block) => {
                 let mut result = DataType::UNDEFINED;
@@ -310,10 +205,7 @@ impl Evaluator {
         }
     }
 
-    pub fn execute(
-        program: Program,
-        env: Rc<RefCell<Environment>>,
-    ) -> Result<DataType, Box<dyn Error>> {
+    pub fn execute(program: Program, env: Rc<RefCell<Environment>>) -> Result<DataType> {
         let mut result = DataType::UNDEFINED;
 
         for statement in program.statements {
@@ -740,7 +632,7 @@ mod tests {
         let test_errors = vec![
             (
                 "len(1);",
-                r#"argument passed to BUILTIN("len") is not supported. got=INT(1), want=STRING|ARRAY"#,
+                r#"argument[0] passed to BUILTIN("len") is not supported. got=INT(1), want=STRING|ARRAY"#,
             ),
             (
                 r#"len("one", "two");"#,
@@ -789,7 +681,7 @@ mod tests {
         let test_errors = vec![
             (
                 "first(1);",
-                r#"argument passed to BUILTIN("first") is not supported. got=INT(1), want=ARRAY"#,
+                r#"argument[0] passed to BUILTIN("first") is not supported. got=INT(1), want=ARRAY"#,
             ),
             (
                 r#"first([1], [2]);"#,
@@ -838,7 +730,7 @@ mod tests {
         let test_errors = vec![
             (
                 "last(1);",
-                r#"argument passed to BUILTIN("last") is not supported. got=INT(1), want=ARRAY"#,
+                r#"argument[0] passed to BUILTIN("last") is not supported. got=INT(1), want=ARRAY"#,
             ),
             (
                 r#"last([1], [2]);"#,
@@ -898,7 +790,7 @@ mod tests {
         let test_errors = vec![
             (
                 "rest(1);",
-                r#"argument passed to BUILTIN("rest") is not supported. got=INT(1), want=ARRAY"#,
+                r#"argument[0] passed to BUILTIN("rest") is not supported. got=INT(1), want=ARRAY"#,
             ),
             (
                 r#"rest([1], [2]);"#,
@@ -959,7 +851,7 @@ mod tests {
                 r#"argument[0] passed to BUILTIN("push") is not supported. got=INT(1), want=ARRAY"#,
             ),
             (
-                r#"push([1]);"#,
+                "push([1]);",
                 r#"extra arguments are passed to BUILTIN("push"). got=1, want=2"#,
             ),
         ];

@@ -1,6 +1,6 @@
 use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
-use crate::{builtins, DataType};
+use crate::{DataType, BUILTINS};
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct Environment {
@@ -9,25 +9,23 @@ pub struct Environment {
 }
 
 impl Environment {
-    fn builtins() -> Environment {
-        let mut env = Environment {
-            store: HashMap::new(),
-            outer: None,
-        };
-
-        for (key, value) in builtins() {
-            env.set(key, value);
-        }
-
-        env
-    }
-
     pub fn new(outer: Option<Rc<RefCell<Environment>>>) -> Self {
         Self {
             store: HashMap::new(),
             outer: match outer {
                 Some(outer) => Some(outer),
-                None => Some(Rc::new(RefCell::new(Environment::builtins()))),
+                None => {
+                    let mut outer = Environment {
+                        store: HashMap::new(),
+                        outer: None,
+                    };
+
+                    for (key, value) in BUILTINS {
+                        outer.set(key, value);
+                    }
+
+                    Some(Rc::new(RefCell::new(outer)))
+                }
             },
         }
     }
