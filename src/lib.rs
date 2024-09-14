@@ -1,7 +1,7 @@
 mod ast;
 mod builtins;
 mod environment;
-mod error;
+pub mod error;
 mod evaluator;
 mod lexer;
 mod parser;
