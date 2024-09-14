@@ -46,7 +46,7 @@ impl ExpressionParser {
         }
 
         match lexer.next() {
-            Some(token) => Err(Error::UnrecognizedToken(token)),
+            Some(token) => Err(Error::UnexpectedToken(token)),
             None => Err(Error::MissingToken),
         }
     }

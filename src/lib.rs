@@ -10,7 +10,6 @@ mod repl;
 pub use ast::*;
 pub use builtins::*;
 pub use environment::*;
-pub use error::*;
 pub use evaluator::*;
 pub use lexer::*;
 pub use parser::*;

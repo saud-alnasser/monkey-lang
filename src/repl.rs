@@ -1,11 +1,13 @@
 use std::{
     cell::RefCell,
-    error::Error,
     io::{self, Write},
     rc::Rc,
 };
 
-use crate::{DataType, Environment, Evaluator, Lexer, Parser};
+use crate::{
+    error::{Error, Result},
+    DataType, Environment, Evaluator, Lexer, Parser,
+};
 
 static MONKEY_FACE: &str = r#"            
             __,__
@@ -24,12 +26,12 @@ static MONKEY_FACE: &str = r#"
 pub struct REPL;
 
 impl REPL {
-    fn execute(code: &str, env: Rc<RefCell<Environment>>) -> Result<DataType, Box<dyn Error>> {
+    fn execute(code: &str, env: Rc<RefCell<Environment>>) -> Result<DataType> {
         let lexer = Lexer::new(code);
         let mut parser = Parser::new(lexer);
-        let program = parser.parse()?;
+        let program = parser.parse().map_err(|error| Error::Parser(error))?;
 
-        Evaluator::execute(program, env)
+        Evaluator::execute(program, env).map_err(|error| Error::Evaluator(error))
     }
 
     pub fn run() {
