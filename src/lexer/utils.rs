@@ -1,5 +1,5 @@
+use super::Cursor;
 use crate::TokenSpan;
-use std::{iter::Peekable, str::Chars};
 
 #[derive(Debug)]
 pub struct SpanTracker {
@@ -59,17 +59,17 @@ impl SpanTracker {
     }
 }
 
-pub fn take_series_where<F>(chars: &mut Peekable<Chars>, predicate: F) -> Option<Box<str>>
+pub fn take_series_where<F>(cursor: &mut Cursor, predicate: F) -> Option<Box<str>>
 where
     F: Fn(&char) -> bool,
 {
     let mut result = String::new();
 
-    while let Some(c) = chars.peek() {
-        match predicate(c) {
+    while let Some(c) = cursor.current() {
+        match predicate(&c) {
             true => {
-                result.push(*c);
-                chars.next();
+                result.push(c);
+                cursor.advance();
             }
             false => break,
         }
