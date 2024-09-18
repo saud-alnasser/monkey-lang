@@ -140,7 +140,7 @@ const STRING_EXPRESSION_RULE: Rule<Expression> = Rule {
     accept: |token| token.kind == TokenKind::STRING,
     parse: |lexer, _| {
         let token = lexer.next().unwrap();
-        let value = token.literal.clone();
+        let value = token.literal[1..token.literal.len() - 1].into();
 
         Ok(Expression::STRING(StringExpression { token, value }))
     },

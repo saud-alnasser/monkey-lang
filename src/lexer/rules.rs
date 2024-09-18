@@ -1,22 +1,18 @@
-use super::{
-    utils::{self, SpanTracker},
-    Cursor,
-};
+use super::Cursor;
 use crate::{Token, TokenKind};
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug)]
 pub struct Rule {
-    pub kind: TokenKind,
-    pub consume: fn(&mut Cursor, &mut SpanTracker) -> Option<Token>,
+    pub consume: fn(&mut Cursor) -> Option<Token>,
 }
 
 // order matters
 // should be from most specific (more symbols) to least specific (less symbols)
 // with taking in account of the type of token.
-pub const RULES: [Rule; 28] = [
-    // whitespace
+pub const RULES: [Rule; 29] = [
+    // whitespace (ignored)
     WHITESPACE_RULE,
-    // operators with more than one symbol
+    // operators with two symbols
     EQ_OPERATOR_RULE,
     NEQ_OPERATOR_RULE,
     LTE_OPERATOR_RULE,
@@ -50,71 +46,50 @@ pub const RULES: [Rule; 28] = [
     FALSE_KEYWORD_RULE,
     // identifier
     IDENTIFIER_RULE,
+    // illegal
+    ILLEGAL_RULE,
 ];
 
 const WHITESPACE_RULE: Rule = Rule {
-    kind: TokenKind::WHITESPACE,
-    consume: |cursor, span| {
-        if let Some(whitespace) = utils::take_series_where(cursor, |c| c.is_whitespace()) {
-            span.advance(&whitespace);
-        }
-
-        None
+    consume: |cursor| {
+        cursor.advance_where(|ch| ch.is_whitespace());
+        cursor.capture(TokenKind::WHITESPACE)
     },
 };
 
 #[cfg(test)]
 mod whitespace_tests {
     use super::*;
-    use crate::TokenSpan;
 
     #[test]
     fn consume_whitespace() {
-        let mut cursor = Cursor::new("  \t\n");
-        let mut span = SpanTracker::new();
+        let mut cursor = Cursor::new("  \n ");
 
-        (WHITESPACE_RULE.consume)(&mut cursor, &mut span);
+        (WHITESPACE_RULE.consume)(&mut cursor);
 
-        assert_eq!(
-            span.capture(),
-            TokenSpan {
-                line: 2,
-                column: 1,
-                length: 1
-            }
-        );
+        let token = cursor.capture(TokenKind::WHITESPACE);
+
+        assert_eq!(token, None)
     }
 
     #[test]
     fn consume_no_whitespace() {
         let mut cursor = Cursor::new("abc");
-        let mut span = SpanTracker::new();
 
-        (WHITESPACE_RULE.consume)(&mut cursor, &mut span);
+        (WHITESPACE_RULE.consume)(&mut cursor);
 
-        assert_eq!(
-            span.capture(),
-            TokenSpan {
-                line: 1,
-                column: 1,
-                length: 1
-            }
-        );
+        let token = cursor.capture(TokenKind::IDENT);
+
+        assert_eq!(token, None)
     }
 }
 
 const ASSIGN_OPERATOR_RULE: Rule = Rule {
-    kind: TokenKind::ASSIGN,
-    consume: |cursor, span| {
+    consume: |cursor| {
         if let '=' = cursor.current()? {
             cursor.advance();
-            span.advance("=");
 
-            return Some(Token {
-                span: span.capture(),
-                kind: TokenKind::ASSIGN,
-                literal: "=".into(),
-            });
+            return cursor.capture(TokenKind::ASSIGN);
         }
 
         None
@@ -124,21 +99,20 @@ const ASSIGN_OPERATOR_RULE: Rule = Rule {
 #[cfg(test)]
 mod assign_operator_tests {
     use super::*;
-    use crate::TokenSpan;
 
     #[test]
     fn consume_assign_operator() {
         let mut cursor = Cursor::new("=");
-        let mut span = SpanTracker::new();
 
-        let token = (ASSIGN_OPERATOR_RULE.consume)(&mut cursor, &mut span).unwrap();
+        let token = (ASSIGN_OPERATOR_RULE.consume)(&mut cursor).unwrap();
 
         assert_eq!(
-            token.span,
-            TokenSpan {
+            token,
+            Token {
+                kind: TokenKind::ASSIGN,
                 line: 1,
                 column: 1,
-                length: 1
+                literal: "=".into(),
             }
         );
         assert_eq!(token.kind, TokenKind::ASSIGN);
@@ -148,26 +122,19 @@ mod assign_operator_tests {
     #[test]
     fn consume_no_assign_operator() {
         let mut cursor = Cursor::new("+");
-        let mut span = SpanTracker::new();
 
-        let token = (ASSIGN_OPERATOR_RULE.consume)(&mut cursor, &mut span);
+        let token = (ASSIGN_OPERATOR_RULE.consume)(&mut cursor);
 
         assert_eq!(token, None);
     }
 }
 
 const PLUS_OPERATOR_RULE: Rule = Rule {
-    kind: TokenKind::PLUS,
-    consume: |cursor, span| {
+    consume: |cursor| {
         if let '+' = cursor.current()? {
             cursor.advance();
-            span.advance("+");
 
-            return Some(Token {
-                span: span.capture(),
-                kind: TokenKind::PLUS,
-                literal: "+".into(),
-            });
+            return cursor.capture(TokenKind::PLUS);
         }
 
         None
@@ -177,50 +144,40 @@ const PLUS_OPERATOR_RULE: Rule = Rule {
 #[cfg(test)]
 mod plus_operator_tests {
     use super::*;
-    use crate::TokenSpan;
 
     #[test]
     fn consume_plus() {
         let mut cursor = Cursor::new("+");
-        let mut span = SpanTracker::new();
 
-        let token = (PLUS_OPERATOR_RULE.consume)(&mut cursor, &mut span).unwrap();
+        let token = (PLUS_OPERATOR_RULE.consume)(&mut cursor).unwrap();
 
         assert_eq!(
-            token.span,
-            TokenSpan {
+            token,
+            Token {
+                kind: TokenKind::PLUS,
                 line: 1,
                 column: 1,
-                length: 1
+                literal: "+".into(),
             }
         );
-        assert_eq!(token.kind, TokenKind::PLUS);
-        assert_eq!(token.literal, "+".into());
     }
 
     #[test]
     fn consume_no_plus() {
         let mut cursor = Cursor::new("=");
-        let mut span = SpanTracker::new();
 
-        let token = (PLUS_OPERATOR_RULE.consume)(&mut cursor, &mut span);
+        let token = (PLUS_OPERATOR_RULE.consume)(&mut cursor);
 
         assert_eq!(token, None);
     }
 }
 
 const MINUS_OPERATOR_RULE: Rule = Rule {
-    kind: TokenKind::MINUS,
-    consume: |cursor, span| {
+    consume: |cursor| {
         if let '-' = cursor.current()? {
             cursor.advance();
-            span.advance("-");
 
-            return Some(Token {
-                span: span.capture(),
-                kind: TokenKind::MINUS,
-                literal: "-".into(),
-            });
+            return cursor.capture(TokenKind::MINUS);
         }
 
         None
@@ -230,50 +187,40 @@ const MINUS_OPERATOR_RULE: Rule = Rule {
 #[cfg(test)]
 mod minus_operator_tests {
     use super::*;
-    use crate::TokenSpan;
 
     #[test]
     fn consume_minus() {
         let mut cursor = Cursor::new("-");
-        let mut span = SpanTracker::new();
 
-        let token = (MINUS_OPERATOR_RULE.consume)(&mut cursor, &mut span).unwrap();
+        let token = (MINUS_OPERATOR_RULE.consume)(&mut cursor).unwrap();
 
         assert_eq!(
-            token.span,
-            TokenSpan {
+            token,
+            Token {
+                kind: TokenKind::MINUS,
                 line: 1,
                 column: 1,
-                length: 1
+                literal: "-".into(),
             }
         );
-        assert_eq!(token.kind, TokenKind::MINUS);
-        assert_eq!(token.literal, "-".into());
     }
 
     #[test]
     fn consume_no_minus() {
         let mut cursor = Cursor::new("+");
-        let mut span = SpanTracker::new();
 
-        let token = (MINUS_OPERATOR_RULE.consume)(&mut cursor, &mut span);
+        let token = (MINUS_OPERATOR_RULE.consume)(&mut cursor);
 
         assert_eq!(token, None);
     }
 }
 
 const ASTERISK_OPERATOR_RULE: Rule = Rule {
-    kind: TokenKind::ASTERISK,
-    consume: |cursor, span| {
+    consume: |cursor| {
         if let '*' = cursor.current()? {
             cursor.advance();
-            span.advance("*");
 
-            return Some(Token {
-                span: span.capture(),
-                kind: TokenKind::ASTERISK,
-                literal: "*".into(),
-            });
+            return cursor.capture(TokenKind::ASTERISK);
         }
 
         None
@@ -283,50 +230,40 @@ const ASTERISK_OPERATOR_RULE: Rule = Rule {
 #[cfg(test)]
 mod asterisk_operator_tests {
     use super::*;
-    use crate::TokenSpan;
 
     #[test]
     fn consume_asterisk() {
         let mut cursor = Cursor::new("*");
-        let mut span = SpanTracker::new();
 
-        let token = (ASTERISK_OPERATOR_RULE.consume)(&mut cursor, &mut span).unwrap();
+        let token = (ASTERISK_OPERATOR_RULE.consume)(&mut cursor).unwrap();
 
         assert_eq!(
-            token.span,
-            TokenSpan {
+            token,
+            Token {
+                kind: TokenKind::ASTERISK,
                 line: 1,
                 column: 1,
-                length: 1
+                literal: "*".into(),
             }
         );
-        assert_eq!(token.kind, TokenKind::ASTERISK);
-        assert_eq!(token.literal, "*".into());
     }
 
     #[test]
     fn consume_no_asterisk() {
         let mut cursor = Cursor::new("+");
-        let mut span = SpanTracker::new();
 
-        let token = (ASTERISK_OPERATOR_RULE.consume)(&mut cursor, &mut span);
+        let token = (ASTERISK_OPERATOR_RULE.consume)(&mut cursor);
 
         assert_eq!(token, None);
     }
 }
 
 const SLASH_OPERATOR_RULE: Rule = Rule {
-    kind: TokenKind::SLASH,
-    consume: |chars, span| {
-        if let '/' = chars.current()? {
-            chars.advance();
-            span.advance("/");
+    consume: |cursor| {
+        if let '/' = cursor.current()? {
+            cursor.advance();
 
-            return Some(Token {
-                span: span.capture(),
-                kind: TokenKind::SLASH,
-                literal: "/".into(),
-            });
+            return cursor.capture(TokenKind::SLASH);
         }
 
         None
@@ -336,50 +273,40 @@ const SLASH_OPERATOR_RULE: Rule = Rule {
 #[cfg(test)]
 mod slash_operator_tests {
     use super::*;
-    use crate::TokenSpan;
 
     #[test]
     fn consume_slash() {
         let mut cursor = Cursor::new("/");
-        let mut span = SpanTracker::new();
 
-        let token = (SLASH_OPERATOR_RULE.consume)(&mut cursor, &mut span).unwrap();
+        let token = (SLASH_OPERATOR_RULE.consume)(&mut cursor).unwrap();
 
         assert_eq!(
-            token.span,
-            TokenSpan {
+            token,
+            Token {
+                kind: TokenKind::SLASH,
                 line: 1,
                 column: 1,
-                length: 1
+                literal: "/".into(),
             }
         );
-        assert_eq!(token.kind, TokenKind::SLASH);
-        assert_eq!(token.literal, "/".into());
     }
 
     #[test]
     fn consume_no_slash() {
         let mut cursor = Cursor::new("+");
-        let mut span = SpanTracker::new();
 
-        let token = (SLASH_OPERATOR_RULE.consume)(&mut cursor, &mut span);
+        let token = (SLASH_OPERATOR_RULE.consume)(&mut cursor);
 
         assert_eq!(token, None);
     }
 }
 
 const BANG_OPERATOR_RULE: Rule = Rule {
-    kind: TokenKind::BANG,
-    consume: |cursor, span| {
+    consume: |cursor| {
         if let '!' = cursor.current()? {
             cursor.advance();
-            span.advance("!");
 
-            return Some(Token {
-                span: span.capture(),
-                kind: TokenKind::BANG,
-                literal: "!".into(),
-            });
+            return cursor.capture(TokenKind::BANG);
         }
 
         None
@@ -389,50 +316,40 @@ const BANG_OPERATOR_RULE: Rule = Rule {
 #[cfg(test)]
 mod bang_operator_tests {
     use super::*;
-    use crate::TokenSpan;
 
     #[test]
     fn consume_bang() {
         let mut cursor = Cursor::new("!");
-        let mut span = SpanTracker::new();
 
-        let token = (BANG_OPERATOR_RULE.consume)(&mut cursor, &mut span).unwrap();
+        let token = (BANG_OPERATOR_RULE.consume)(&mut cursor).unwrap();
 
         assert_eq!(
-            token.span,
-            TokenSpan {
+            token,
+            Token {
+                kind: TokenKind::BANG,
                 line: 1,
                 column: 1,
-                length: 1
+                literal: "!".into(),
             }
-        );
-        assert_eq!(token.kind, TokenKind::BANG);
-        assert_eq!(token.literal, "!".into());
+        )
     }
 
     #[test]
     fn consume_no_bang() {
         let mut cursor = Cursor::new("+");
-        let mut span = SpanTracker::new();
 
-        let token = (BANG_OPERATOR_RULE.consume)(&mut cursor, &mut span);
+        let token = (BANG_OPERATOR_RULE.consume)(&mut cursor);
 
         assert_eq!(token, None);
     }
 }
 
 const GT_OPERATOR_RULE: Rule = Rule {
-    kind: TokenKind::GT,
-    consume: |cursor, span| {
+    consume: |cursor| {
         if let '>' = cursor.current()? {
             cursor.advance();
-            span.advance(">");
 
-            return Some(Token {
-                span: span.capture(),
-                kind: TokenKind::GT,
-                literal: ">".into(),
-            });
+            return cursor.capture(TokenKind::GT);
         }
 
         None
@@ -442,50 +359,40 @@ const GT_OPERATOR_RULE: Rule = Rule {
 #[cfg(test)]
 mod gt_operator_tests {
     use super::*;
-    use crate::TokenSpan;
 
     #[test]
     fn consume_gt() {
         let mut cursor = Cursor::new(">");
-        let mut span = SpanTracker::new();
 
-        let token = (GT_OPERATOR_RULE.consume)(&mut cursor, &mut span).unwrap();
+        let token = (GT_OPERATOR_RULE.consume)(&mut cursor).unwrap();
 
         assert_eq!(
-            token.span,
-            TokenSpan {
+            token,
+            Token {
+                kind: TokenKind::GT,
                 line: 1,
                 column: 1,
-                length: 1
+                literal: ">".into(),
             }
         );
-        assert_eq!(token.kind, TokenKind::GT);
-        assert_eq!(token.literal, ">".into());
     }
 
     #[test]
     fn consume_no_gt() {
         let mut cursor = Cursor::new("+");
-        let mut span = SpanTracker::new();
 
-        let token = (GT_OPERATOR_RULE.consume)(&mut cursor, &mut span);
+        let token = (GT_OPERATOR_RULE.consume)(&mut cursor);
 
         assert_eq!(token, None);
     }
 }
 
 const LT_OPERATOR_RULE: Rule = Rule {
-    kind: TokenKind::LT,
-    consume: |cursor, span| {
+    consume: |cursor| {
         if let '<' = cursor.current()? {
             cursor.advance();
-            span.advance("<");
 
-            return Some(Token {
-                span: span.capture(),
-                kind: TokenKind::LT,
-                literal: "<".into(),
-            });
+            return cursor.capture(TokenKind::LT);
         }
 
         None
@@ -495,53 +402,42 @@ const LT_OPERATOR_RULE: Rule = Rule {
 #[cfg(test)]
 mod lt_operator_tests {
     use super::*;
-    use crate::TokenSpan;
 
     #[test]
     fn consume_lt() {
         let mut cursor = Cursor::new("<");
-        let mut span = SpanTracker::new();
 
-        let token = (LT_OPERATOR_RULE.consume)(&mut cursor, &mut span).unwrap();
+        let token = (LT_OPERATOR_RULE.consume)(&mut cursor).unwrap();
 
         assert_eq!(
-            token.span,
-            TokenSpan {
+            token,
+            Token {
+                kind: TokenKind::LT,
                 line: 1,
                 column: 1,
-                length: 1
+                literal: "<".into(),
             }
         );
-        assert_eq!(token.kind, TokenKind::LT);
-        assert_eq!(token.literal, "<".into());
     }
 
     #[test]
     fn consume_no_lt() {
         let mut cursor = Cursor::new("+");
-        let mut span = SpanTracker::new();
 
-        let token = (LT_OPERATOR_RULE.consume)(&mut cursor, &mut span);
+        let token = (LT_OPERATOR_RULE.consume)(&mut cursor);
 
         assert_eq!(token, None);
     }
 }
 
 const EQ_OPERATOR_RULE: Rule = Rule {
-    kind: TokenKind::EQ,
-    consume: |cursor, span| {
+    consume: |cursor| {
         if let '=' = cursor.current()? {
             if let '=' = cursor.next()? {
                 cursor.advance();
                 cursor.advance();
 
-                span.advance("==");
-
-                return Some(Token {
-                    span: span.capture(),
-                    kind: TokenKind::EQ,
-                    literal: "==".into(),
-                });
+                return cursor.capture(TokenKind::EQ);
             }
         }
 
@@ -552,53 +448,42 @@ const EQ_OPERATOR_RULE: Rule = Rule {
 #[cfg(test)]
 mod eq_operator_tests {
     use super::*;
-    use crate::TokenSpan;
 
     #[test]
     fn consume_eq() {
         let mut cursor = Cursor::new("==");
-        let mut span = SpanTracker::new();
 
-        let token = (EQ_OPERATOR_RULE.consume)(&mut cursor, &mut span).unwrap();
+        let token = (EQ_OPERATOR_RULE.consume)(&mut cursor).unwrap();
 
         assert_eq!(
-            token.span,
-            TokenSpan {
+            token,
+            Token {
+                kind: TokenKind::EQ,
                 line: 1,
                 column: 1,
-                length: 2
+                literal: "==".into(),
             }
         );
-        assert_eq!(token.kind, TokenKind::EQ);
-        assert_eq!(token.literal, "==".into());
     }
 
     #[test]
     fn consume_no_eq() {
         let mut cursor = Cursor::new("+");
-        let mut span = SpanTracker::new();
 
-        let token = (EQ_OPERATOR_RULE.consume)(&mut cursor, &mut span);
+        let token = (EQ_OPERATOR_RULE.consume)(&mut cursor);
 
         assert_eq!(token, None);
     }
 }
 
 const NEQ_OPERATOR_RULE: Rule = Rule {
-    kind: TokenKind::NEQ,
-    consume: |cursor, span| {
+    consume: |cursor| {
         if let '!' = cursor.current()? {
             if let '=' = cursor.next()? {
                 cursor.advance();
                 cursor.advance();
 
-                span.advance("!=");
-
-                return Some(Token {
-                    span: span.capture(),
-                    kind: TokenKind::NEQ,
-                    literal: "!=".into(),
-                });
+                return cursor.capture(TokenKind::NEQ);
             }
         }
 
@@ -609,53 +494,42 @@ const NEQ_OPERATOR_RULE: Rule = Rule {
 #[cfg(test)]
 mod neq_operator_tests {
     use super::*;
-    use crate::TokenSpan;
 
     #[test]
     fn consume_neq() {
         let mut cursor = Cursor::new("!=");
-        let mut span = SpanTracker::new();
 
-        let token = (NEQ_OPERATOR_RULE.consume)(&mut cursor, &mut span).unwrap();
+        let token = (NEQ_OPERATOR_RULE.consume)(&mut cursor).unwrap();
 
         assert_eq!(
-            token.span,
-            TokenSpan {
+            token,
+            Token {
+                kind: TokenKind::NEQ,
                 line: 1,
                 column: 1,
-                length: 2
+                literal: "!=".into(),
             }
         );
-        assert_eq!(token.kind, TokenKind::NEQ);
-        assert_eq!(token.literal, "!=".into());
     }
 
     #[test]
     fn consume_no_neq() {
         let mut cursor = Cursor::new("+");
-        let mut span = SpanTracker::new();
 
-        let token = (NEQ_OPERATOR_RULE.consume)(&mut cursor, &mut span);
+        let token = (NEQ_OPERATOR_RULE.consume)(&mut cursor);
 
         assert_eq!(token, None);
     }
 }
 
 const LTE_OPERATOR_RULE: Rule = Rule {
-    kind: TokenKind::LTE,
-    consume: |cursor, span| {
+    consume: |cursor| {
         if let '<' = cursor.current()? {
             if let '=' = cursor.next()? {
                 cursor.advance();
                 cursor.advance();
 
-                span.advance("<=");
-
-                return Some(Token {
-                    span: span.capture(),
-                    kind: TokenKind::LTE,
-                    literal: "<=".into(),
-                });
+                return cursor.capture(TokenKind::LTE);
             }
         }
 
@@ -666,53 +540,42 @@ const LTE_OPERATOR_RULE: Rule = Rule {
 #[cfg(test)]
 mod lte_operator_tests {
     use super::*;
-    use crate::TokenSpan;
 
     #[test]
     fn consume_lte() {
         let mut cursor = Cursor::new("<=");
-        let mut span = SpanTracker::new();
 
-        let token = (LTE_OPERATOR_RULE.consume)(&mut cursor, &mut span).unwrap();
+        let token = (LTE_OPERATOR_RULE.consume)(&mut cursor).unwrap();
 
         assert_eq!(
-            token.span,
-            TokenSpan {
+            token,
+            Token {
+                kind: TokenKind::LTE,
                 line: 1,
                 column: 1,
-                length: 2
+                literal: "<=".into(),
             }
         );
-        assert_eq!(token.kind, TokenKind::LTE);
-        assert_eq!(token.literal, "<=".into());
     }
 
     #[test]
     fn consume_no_lte() {
         let mut cursor = Cursor::new("+");
-        let mut span = SpanTracker::new();
 
-        let token = (LTE_OPERATOR_RULE.consume)(&mut cursor, &mut span);
+        let token = (LTE_OPERATOR_RULE.consume)(&mut cursor);
 
         assert_eq!(token, None);
     }
 }
 
 const GTE_OPERATOR_RULE: Rule = Rule {
-    kind: TokenKind::GTE,
-    consume: |cursor, span| {
+    consume: |cursor| {
         if let '>' = cursor.current()? {
             if let '=' = cursor.next()? {
                 cursor.advance();
                 cursor.advance();
 
-                span.advance(">=");
-
-                return Some(Token {
-                    span: span.capture(),
-                    kind: TokenKind::GTE,
-                    literal: ">=".into(),
-                });
+                return cursor.capture(TokenKind::GTE);
             }
         }
 
@@ -723,50 +586,40 @@ const GTE_OPERATOR_RULE: Rule = Rule {
 #[cfg(test)]
 mod gte_operator_tests {
     use super::*;
-    use crate::TokenSpan;
 
     #[test]
     fn consume_gte() {
         let mut cursor = Cursor::new(">=");
-        let mut span = SpanTracker::new();
 
-        let token = (GTE_OPERATOR_RULE.consume)(&mut cursor, &mut span).unwrap();
+        let token = (GTE_OPERATOR_RULE.consume)(&mut cursor).unwrap();
 
         assert_eq!(
-            token.span,
-            TokenSpan {
+            token,
+            Token {
+                kind: TokenKind::GTE,
                 line: 1,
                 column: 1,
-                length: 2
+                literal: ">=".into(),
             }
         );
-        assert_eq!(token.kind, TokenKind::GTE);
-        assert_eq!(token.literal, ">=".into());
     }
 
     #[test]
     fn consume_no_gte() {
         let mut cursor = Cursor::new("+");
-        let mut span = SpanTracker::new();
 
-        let token = (GTE_OPERATOR_RULE.consume)(&mut cursor, &mut span);
+        let token = (GTE_OPERATOR_RULE.consume)(&mut cursor);
 
         assert_eq!(token, None);
     }
 }
 
 const COMMA_DELIMITER_RULE: Rule = Rule {
-    kind: TokenKind::COMMA,
-    consume: |cursor, span| {
+    consume: |cursor| {
         if let ',' = cursor.current()? {
             cursor.advance();
-            span.advance(",");
 
-            return Some(Token {
-                span: span.capture(),
-                kind: TokenKind::COMMA,
-                literal: ",".into(),
-            });
+            return cursor.capture(TokenKind::COMMA);
         }
 
         None
@@ -776,50 +629,40 @@ const COMMA_DELIMITER_RULE: Rule = Rule {
 #[cfg(test)]
 mod comma_delimiter_tests {
     use super::*;
-    use crate::TokenSpan;
 
     #[test]
     fn consume_comma() {
         let mut cursor = Cursor::new(",");
-        let mut span = SpanTracker::new();
 
-        let token = (COMMA_DELIMITER_RULE.consume)(&mut cursor, &mut span).unwrap();
+        let token = (COMMA_DELIMITER_RULE.consume)(&mut cursor).unwrap();
 
         assert_eq!(
-            token.span,
-            TokenSpan {
+            token,
+            Token {
+                kind: TokenKind::COMMA,
                 line: 1,
                 column: 1,
-                length: 1
+                literal: ",".into(),
             }
         );
-        assert_eq!(token.kind, TokenKind::COMMA);
-        assert_eq!(token.literal, ",".into());
     }
 
     #[test]
     fn consume_no_comma() {
         let mut cursor = Cursor::new(";");
-        let mut span = SpanTracker::new();
 
-        let token = (COMMA_DELIMITER_RULE.consume)(&mut cursor, &mut span);
+        let token = (COMMA_DELIMITER_RULE.consume)(&mut cursor);
 
         assert_eq!(token, None);
     }
 }
 
 const SEMICOLON_DELIMITER_RULE: Rule = Rule {
-    kind: TokenKind::SEMICOLON,
-    consume: |cursor, span| {
+    consume: |cursor| {
         if let ';' = cursor.current()? {
             cursor.advance();
-            span.advance(";");
 
-            return Some(Token {
-                span: span.capture(),
-                kind: TokenKind::SEMICOLON,
-                literal: ";".into(),
-            });
+            return cursor.capture(TokenKind::SEMICOLON);
         }
 
         None
@@ -829,60 +672,43 @@ const SEMICOLON_DELIMITER_RULE: Rule = Rule {
 #[cfg(test)]
 mod semicolon_delimiter_tests {
     use super::*;
-    use crate::TokenSpan;
 
     #[test]
     fn consume_semicolon() {
         let mut cursor = Cursor::new(";");
-        let mut span = SpanTracker::new();
 
-        let token = (SEMICOLON_DELIMITER_RULE.consume)(&mut cursor, &mut span).unwrap();
+        let token = (SEMICOLON_DELIMITER_RULE.consume)(&mut cursor).unwrap();
 
         assert_eq!(
-            token.span,
-            TokenSpan {
+            token,
+            Token {
+                kind: TokenKind::SEMICOLON,
                 line: 1,
                 column: 1,
-                length: 1
+                literal: ";".into(),
             }
-        );
-        assert_eq!(token.kind, TokenKind::SEMICOLON);
-        assert_eq!(token.literal, ";".into());
+        )
     }
 
     #[test]
     fn consume_no_semicolon() {
         let mut cursor = Cursor::new(",");
-        let mut span = SpanTracker::new();
 
-        let token = (SEMICOLON_DELIMITER_RULE.consume)(&mut cursor, &mut span);
+        let token = (SEMICOLON_DELIMITER_RULE.consume)(&mut cursor);
 
         assert_eq!(token, None);
     }
 }
 
 const PARENTHESES_RULE: Rule = Rule {
-    kind: TokenKind::LPAREN,
-    consume: |cursor, span| match cursor.current()? {
+    consume: |cursor| match cursor.current()? {
         '(' => {
             cursor.advance();
-            span.advance("(");
-
-            Some(Token {
-                span: span.capture(),
-                kind: TokenKind::LPAREN,
-                literal: "(".into(),
-            })
+            cursor.capture(TokenKind::LPAREN)
         }
         ')' => {
             cursor.advance();
-            span.advance(")");
-
-            Some(Token {
-                span: span.capture(),
-                kind: TokenKind::RPAREN,
-                literal: ")".into(),
-            })
+            cursor.capture(TokenKind::RPAREN)
         }
         _ => None,
     },
@@ -891,73 +717,55 @@ const PARENTHESES_RULE: Rule = Rule {
 #[cfg(test)]
 mod parentheses_tests {
     use super::*;
-    use crate::TokenSpan;
 
     #[test]
     fn consume_parentheses() {
         let mut cursor = Cursor::new("()");
-        let mut span = SpanTracker::new();
 
-        let token = (PARENTHESES_RULE.consume)(&mut cursor, &mut span).unwrap();
+        let token = (PARENTHESES_RULE.consume)(&mut cursor).unwrap();
 
         assert_eq!(
-            token.span,
-            TokenSpan {
+            token,
+            Token {
+                kind: TokenKind::LPAREN,
                 line: 1,
                 column: 1,
-                length: 1
+                literal: "(".into(),
             }
         );
-        assert_eq!(token.kind, TokenKind::LPAREN);
-        assert_eq!(token.literal, "(".into());
 
-        let token = (PARENTHESES_RULE.consume)(&mut cursor, &mut span).unwrap();
+        let token = (PARENTHESES_RULE.consume)(&mut cursor).unwrap();
 
         assert_eq!(
-            token.span,
-            TokenSpan {
+            token,
+            Token {
+                kind: TokenKind::RPAREN,
                 line: 1,
                 column: 2,
-                length: 1
+                literal: ")".into(),
             }
         );
-        assert_eq!(token.kind, TokenKind::RPAREN);
-        assert_eq!(token.literal, ")".into());
     }
 
     #[test]
     fn consume_no_parentheses() {
         let mut cursor = Cursor::new("{}");
-        let mut span = SpanTracker::new();
 
-        let token = (PARENTHESES_RULE.consume)(&mut cursor, &mut span);
+        let token = (PARENTHESES_RULE.consume)(&mut cursor);
 
         assert_eq!(token, None);
     }
 }
 
 const BRACES_RULE: Rule = Rule {
-    kind: TokenKind::LBRACE,
-    consume: |cursor, span| match cursor.current()? {
+    consume: |cursor| match cursor.current()? {
         '{' => {
             cursor.advance();
-            span.advance("{");
-
-            Some(Token {
-                span: span.capture(),
-                kind: TokenKind::LBRACE,
-                literal: "{".into(),
-            })
+            cursor.capture(TokenKind::LBRACE)
         }
         '}' => {
             cursor.advance();
-            span.advance("}");
-
-            Some(Token {
-                span: span.capture(),
-                kind: TokenKind::RBRACE,
-                literal: "}".into(),
-            })
+            cursor.capture(TokenKind::RBRACE)
         }
         _ => None,
     },
@@ -966,73 +774,55 @@ const BRACES_RULE: Rule = Rule {
 #[cfg(test)]
 mod braces_tests {
     use super::*;
-    use crate::TokenSpan;
 
     #[test]
     fn consume_braces() {
         let mut cursor = Cursor::new("{}");
-        let mut span = SpanTracker::new();
 
-        let token = (BRACES_RULE.consume)(&mut cursor, &mut span).unwrap();
+        let token = (BRACES_RULE.consume)(&mut cursor).unwrap();
 
         assert_eq!(
-            token.span,
-            TokenSpan {
+            token,
+            Token {
+                kind: TokenKind::LBRACE,
                 line: 1,
                 column: 1,
-                length: 1
+                literal: r#"{"#.into(),
             }
         );
-        assert_eq!(token.kind, TokenKind::LBRACE);
-        assert_eq!(token.literal, "{".into());
 
-        let token = (BRACES_RULE.consume)(&mut cursor, &mut span).unwrap();
+        let token = (BRACES_RULE.consume)(&mut cursor).unwrap();
 
         assert_eq!(
-            token.span,
-            TokenSpan {
+            token,
+            Token {
+                kind: TokenKind::RBRACE,
                 line: 1,
                 column: 2,
-                length: 1
+                literal: r#"}"#.into(),
             }
-        );
-        assert_eq!(token.kind, TokenKind::RBRACE);
-        assert_eq!(token.literal, "}".into());
+        )
     }
 
     #[test]
     fn consume_no_braces() {
         let mut cursor = Cursor::new("()");
-        let mut span = SpanTracker::new();
 
-        let token = (BRACES_RULE.consume)(&mut cursor, &mut span);
+        let token = (BRACES_RULE.consume)(&mut cursor);
 
         assert_eq!(token, None);
     }
 }
 
 const BRACKETS_RULE: Rule = Rule {
-    kind: TokenKind::LBRACKET,
-    consume: |cursor, span| match cursor.current()? {
+    consume: |cursor| match cursor.current()? {
         '[' => {
             cursor.advance();
-            span.advance("[");
-
-            Some(Token {
-                span: span.capture(),
-                kind: TokenKind::LBRACKET,
-                literal: "[".into(),
-            })
+            cursor.capture(TokenKind::LBRACKET)
         }
         ']' => {
             cursor.advance();
-            span.advance("]");
-
-            Some(Token {
-                span: span.capture(),
-                kind: TokenKind::RBRACKET,
-                literal: "]".into(),
-            })
+            cursor.capture(TokenKind::RBRACKET)
         }
         _ => None,
     },
@@ -1041,73 +831,54 @@ const BRACKETS_RULE: Rule = Rule {
 #[cfg(test)]
 mod brackets_tests {
     use super::*;
-    use crate::TokenSpan;
 
     #[test]
     fn consume_brackets() {
         let mut cursor = Cursor::new("[]");
-        let mut span = SpanTracker::new();
 
-        let token = (BRACKETS_RULE.consume)(&mut cursor, &mut span).unwrap();
+        let token = (BRACKETS_RULE.consume)(&mut cursor).unwrap();
 
         assert_eq!(
-            token.span,
-            TokenSpan {
+            token,
+            Token {
+                kind: TokenKind::LBRACKET,
                 line: 1,
                 column: 1,
-                length: 1
+                literal: "[".into(),
             }
         );
-        assert_eq!(token.kind, TokenKind::LBRACKET);
-        assert_eq!(token.literal, "[".into());
 
-        let token = (BRACKETS_RULE.consume)(&mut cursor, &mut span).unwrap();
+        let token = (BRACKETS_RULE.consume)(&mut cursor).unwrap();
 
         assert_eq!(
-            token.span,
-            TokenSpan {
+            token,
+            Token {
+                kind: TokenKind::RBRACKET,
                 line: 1,
                 column: 2,
-                length: 1
+                literal: "]".into(),
             }
-        );
-        assert_eq!(token.kind, TokenKind::RBRACKET);
-        assert_eq!(token.literal, "]".into());
+        )
     }
 
     #[test]
     fn consume_no_brackets() {
         let mut cursor = Cursor::new("()");
-        let mut span = SpanTracker::new();
 
-        let token = (BRACKETS_RULE.consume)(&mut cursor, &mut span);
+        let token = (BRACKETS_RULE.consume)(&mut cursor);
 
         assert_eq!(token, None);
     }
 }
 
 const STRINGS_RULE: Rule = Rule {
-    kind: TokenKind::STRING,
-    consume: |cursor, span| {
+    consume: |cursor| {
         if let '"' = cursor.current()? {
-            let literal = {
-                cursor.advance();
-                span.advance("\"");
+            cursor.advance();
+            cursor.advance_where(|c| *c != '"');
+            cursor.advance();
 
-                let literal = utils::take_series_where(cursor, |c| *c != '"').unwrap_or_default();
-                span.advance(&literal);
-
-                cursor.advance();
-                span.advance("\"");
-
-                literal
-            };
-
-            return Some(Token {
-                span: span.capture(),
-                kind: TokenKind::STRING,
-                literal,
-            });
+            return cursor.capture(TokenKind::STRING);
         }
 
         None
@@ -1117,109 +888,88 @@ const STRINGS_RULE: Rule = Rule {
 #[cfg(test)]
 mod strings_tests {
     use super::*;
-    use crate::TokenSpan;
 
     #[test]
     fn consume_string() {
         let mut cursor = Cursor::new("\"hello, world!\"");
-        let mut span = SpanTracker::new();
 
-        let token = (STRINGS_RULE.consume)(&mut cursor, &mut span).unwrap();
+        let token = (STRINGS_RULE.consume)(&mut cursor).unwrap();
 
         assert_eq!(
-            token.span,
-            TokenSpan {
+            token,
+            Token {
+                kind: TokenKind::STRING,
                 line: 1,
-                column: 15,
-                length: 1
+                column: 1,
+                literal: "\"hello, world!\"".into(),
             }
         );
-        assert_eq!(token.kind, TokenKind::STRING);
-        assert_eq!(token.literal, "hello, world!".into());
     }
 
     #[test]
     fn consume_no_string() {
         let mut cursor = Cursor::new("abc");
-        let mut span = SpanTracker::new();
 
-        let token = (STRINGS_RULE.consume)(&mut cursor, &mut span);
+        let token = (STRINGS_RULE.consume)(&mut cursor);
 
         assert_eq!(token, None);
     }
 }
 
 const INTEGERS_RULE: Rule = Rule {
-    kind: TokenKind::INT,
-    consume: |cursor, span| match utils::take_series_where(cursor, |c| c.is_ascii_digit()) {
-        Some(literal) => {
-            span.advance(&literal);
-
-            Some(Token {
-                span: span.capture(),
-                kind: TokenKind::INT,
-                literal,
-            })
-        }
-        None => None,
+    consume: |cursor| {
+        cursor.advance_where(|ch| ch.is_ascii_digit());
+        cursor.capture(TokenKind::INT)
     },
 };
 
 #[cfg(test)]
 mod integers_tests {
     use super::*;
-    use crate::TokenSpan;
 
     #[test]
     fn consume_integer() {
         let mut cursor = Cursor::new("123");
-        let mut span = SpanTracker::new();
 
-        let token = (INTEGERS_RULE.consume)(&mut cursor, &mut span).unwrap();
+        let token = (INTEGERS_RULE.consume)(&mut cursor).unwrap();
 
         assert_eq!(
-            token.span,
-            TokenSpan {
+            token,
+            Token {
+                kind: TokenKind::INT,
                 line: 1,
                 column: 1,
-                length: 3
+                literal: "123".into(),
             }
-        );
-        assert_eq!(token.kind, TokenKind::INT);
-        assert_eq!(token.literal, "123".into());
+        )
     }
 
     #[test]
     fn consume_no_integer() {
         let mut cursor = Cursor::new("abc");
-        let mut span = SpanTracker::new();
 
-        let token = (INTEGERS_RULE.consume)(&mut cursor, &mut span);
+        let token = (INTEGERS_RULE.consume)(&mut cursor);
 
         assert_eq!(token, None);
     }
 }
 
 const LET_KEYWORD_RULE: Rule = Rule {
-    kind: TokenKind::LET,
-    consume: |cursor, span| {
+    consume: |cursor| {
         let mut cloned = cursor.clone();
 
         let keyword = "let";
-        let literal = utils::take_series_where(&mut cloned, |c| c.is_ascii_alphabetic())?;
 
-        if &*literal == keyword {
+        cloned.advance_where(|ch| ch.is_ascii_alphabetic());
+
+        let token = cloned.capture(TokenKind::IDENT)?;
+
+        if &*token.literal == keyword {
             for _ in 0..keyword.len() {
                 cursor.advance();
             }
 
-            span.advance(&literal);
-
-            return Some(Token {
-                span: span.capture(),
-                kind: TokenKind::LET,
-                literal: literal.into(),
-            });
+            return cursor.capture(TokenKind::LET);
         }
 
         None
@@ -1229,58 +979,50 @@ const LET_KEYWORD_RULE: Rule = Rule {
 #[cfg(test)]
 mod let_keyword_tests {
     use super::*;
-    use crate::TokenSpan;
 
     #[test]
     fn consume_let_keyword() {
         let mut cursor = Cursor::new("let");
-        let mut span = SpanTracker::new();
 
-        let token = (LET_KEYWORD_RULE.consume)(&mut cursor, &mut span).unwrap();
+        let token = (LET_KEYWORD_RULE.consume)(&mut cursor).unwrap();
 
         assert_eq!(
-            token.span,
-            TokenSpan {
+            token,
+            Token {
+                kind: TokenKind::LET,
                 line: 1,
                 column: 1,
-                length: 3
+                literal: "let".into(),
             }
-        );
-        assert_eq!(token.kind, TokenKind::LET);
-        assert_eq!(token.literal, "let".into());
+        )
     }
 
     #[test]
     fn consume_no_let_keyword() {
         let mut cursor = Cursor::new("abc");
-        let mut span = SpanTracker::new();
 
-        let token = (LET_KEYWORD_RULE.consume)(&mut cursor, &mut span);
+        let token = (LET_KEYWORD_RULE.consume)(&mut cursor);
 
         assert_eq!(token, None);
     }
 }
 
 const FUNCTION_KEYWORD_RULE: Rule = Rule {
-    kind: TokenKind::FUNCTION,
-    consume: |cursor, span| {
+    consume: |cursor| {
         let mut cloned = cursor.clone();
 
         let keyword = "fn";
-        let literal = utils::take_series_where(&mut cloned, |c| c.is_ascii_alphabetic())?;
 
-        if &*literal == keyword {
+        cloned.advance_where(|ch| ch.is_ascii_alphabetic());
+
+        let token = cloned.capture(TokenKind::IDENT)?;
+
+        if &*token.literal == keyword {
             for _ in 0..keyword.len() {
                 cursor.advance();
             }
 
-            span.advance(&literal);
-
-            return Some(Token {
-                span: span.capture(),
-                kind: TokenKind::FUNCTION,
-                literal: literal.into(),
-            });
+            return cursor.capture(TokenKind::FUNCTION);
         }
 
         None
@@ -1290,58 +1032,50 @@ const FUNCTION_KEYWORD_RULE: Rule = Rule {
 #[cfg(test)]
 mod function_keyword_tests {
     use super::*;
-    use crate::TokenSpan;
 
     #[test]
     fn consume_function_keyword() {
         let mut cursor = Cursor::new("fn");
-        let mut span = SpanTracker::new();
 
-        let token = (FUNCTION_KEYWORD_RULE.consume)(&mut cursor, &mut span).unwrap();
+        let token = (FUNCTION_KEYWORD_RULE.consume)(&mut cursor).unwrap();
 
         assert_eq!(
-            token.span,
-            TokenSpan {
+            token,
+            Token {
+                kind: TokenKind::FUNCTION,
                 line: 1,
                 column: 1,
-                length: 2
+                literal: "fn".into(),
             }
         );
-        assert_eq!(token.kind, TokenKind::FUNCTION);
-        assert_eq!(token.literal, "fn".into());
     }
 
     #[test]
     fn consume_no_function_keyword() {
         let mut cursor = Cursor::new("abc");
-        let mut span = SpanTracker::new();
 
-        let token = (FUNCTION_KEYWORD_RULE.consume)(&mut cursor, &mut span);
+        let token = (FUNCTION_KEYWORD_RULE.consume)(&mut cursor);
 
         assert_eq!(token, None);
     }
 }
 
 const RETURN_KEYWORD_RULE: Rule = Rule {
-    kind: TokenKind::RETURN,
-    consume: |cursor, span| {
+    consume: |cursor| {
         let mut cloned = cursor.clone();
 
         let keyword = "return";
-        let literal = utils::take_series_where(&mut cloned, |c| c.is_ascii_alphabetic())?;
 
-        if &*literal == keyword {
+        cloned.advance_where(|ch| ch.is_ascii_alphabetic());
+
+        let token = cloned.capture(TokenKind::IDENT)?;
+
+        if &*token.literal == keyword {
             for _ in 0..keyword.len() {
                 cursor.advance();
             }
 
-            span.advance(&literal);
-
-            return Some(Token {
-                span: span.capture(),
-                kind: TokenKind::RETURN,
-                literal: literal.into(),
-            });
+            return cursor.capture(TokenKind::RETURN);
         }
 
         None
@@ -1351,58 +1085,50 @@ const RETURN_KEYWORD_RULE: Rule = Rule {
 #[cfg(test)]
 mod return_keyword_tests {
     use super::*;
-    use crate::TokenSpan;
 
     #[test]
     fn consume_return_keyword() {
         let mut cursor = Cursor::new("return");
-        let mut span = SpanTracker::new();
 
-        let token = (RETURN_KEYWORD_RULE.consume)(&mut cursor, &mut span).unwrap();
+        let token = (RETURN_KEYWORD_RULE.consume)(&mut cursor).unwrap();
 
         assert_eq!(
-            token.span,
-            TokenSpan {
+            token,
+            Token {
+                kind: TokenKind::RETURN,
                 line: 1,
                 column: 1,
-                length: 6
+                literal: "return".into()
             }
         );
-        assert_eq!(token.kind, TokenKind::RETURN);
-        assert_eq!(token.literal, "return".into());
     }
 
     #[test]
     fn consume_no_return_keyword() {
         let mut cursor = Cursor::new("abc");
-        let mut span = SpanTracker::new();
 
-        let token = (RETURN_KEYWORD_RULE.consume)(&mut cursor, &mut span);
+        let token = (RETURN_KEYWORD_RULE.consume)(&mut cursor);
 
         assert_eq!(token, None);
     }
 }
 
 const IF_KEYWORD_RULE: Rule = Rule {
-    kind: TokenKind::IF,
-    consume: |cursor, span| {
+    consume: |cursor| {
         let mut cloned = cursor.clone();
 
         let keyword = "if";
-        let literal = utils::take_series_where(&mut cloned, |c| c.is_ascii_alphabetic())?;
 
-        if &*literal == keyword {
+        cloned.advance_where(|ch| ch.is_ascii_alphabetic());
+
+        let token = cloned.capture(TokenKind::IDENT)?;
+
+        if &*token.literal == keyword {
             for _ in 0..keyword.len() {
                 cursor.advance();
             }
 
-            span.advance(&literal);
-
-            return Some(Token {
-                span: span.capture(),
-                kind: TokenKind::IF,
-                literal: literal.into(),
-            });
+            return cursor.capture(TokenKind::IF);
         }
 
         None
@@ -1412,58 +1138,50 @@ const IF_KEYWORD_RULE: Rule = Rule {
 #[cfg(test)]
 mod if_keyword_tests {
     use super::*;
-    use crate::TokenSpan;
 
     #[test]
     fn consume_if_keyword() {
         let mut cursor = Cursor::new("if");
-        let mut span = SpanTracker::new();
 
-        let token = (IF_KEYWORD_RULE.consume)(&mut cursor, &mut span).unwrap();
+        let token = (IF_KEYWORD_RULE.consume)(&mut cursor).unwrap();
 
         assert_eq!(
-            token.span,
-            TokenSpan {
+            token,
+            Token {
+                kind: TokenKind::IF,
                 line: 1,
                 column: 1,
-                length: 2
+                literal: "if".into(),
             }
         );
-        assert_eq!(token.kind, TokenKind::IF);
-        assert_eq!(token.literal, "if".into());
     }
 
     #[test]
     fn consume_no_if_keyword() {
         let mut cursor = Cursor::new("abc");
-        let mut span = SpanTracker::new();
 
-        let token = (IF_KEYWORD_RULE.consume)(&mut cursor, &mut span);
+        let token = (IF_KEYWORD_RULE.consume)(&mut cursor);
 
         assert_eq!(token, None);
     }
 }
 
 const ELSE_KEYWORD_RULE: Rule = Rule {
-    kind: TokenKind::ELSE,
-    consume: |cursor, span| {
+    consume: |cursor| {
         let mut cloned = cursor.clone();
 
         let keyword = "else";
-        let literal = utils::take_series_where(&mut cloned, |c| c.is_ascii_alphabetic())?;
 
-        if &*literal == keyword {
+        cloned.advance_where(|ch| ch.is_ascii_alphabetic());
+
+        let token = cloned.capture(TokenKind::IDENT)?;
+
+        if &*token.literal == keyword {
             for _ in 0..keyword.len() {
                 cursor.advance();
             }
 
-            span.advance(&literal);
-
-            return Some(Token {
-                span: span.capture(),
-                kind: TokenKind::ELSE,
-                literal: literal.into(),
-            });
+            return cursor.capture(TokenKind::ELSE);
         }
 
         None
@@ -1473,58 +1191,50 @@ const ELSE_KEYWORD_RULE: Rule = Rule {
 #[cfg(test)]
 mod else_keyword_tests {
     use super::*;
-    use crate::TokenSpan;
 
     #[test]
     fn consume_else_keyword() {
         let mut cursor = Cursor::new("else");
-        let mut span = SpanTracker::new();
 
-        let token = (ELSE_KEYWORD_RULE.consume)(&mut cursor, &mut span).unwrap();
+        let token = (ELSE_KEYWORD_RULE.consume)(&mut cursor).unwrap();
 
         assert_eq!(
-            token.span,
-            TokenSpan {
+            token,
+            Token {
+                kind: TokenKind::ELSE,
                 line: 1,
                 column: 1,
-                length: 4
+                literal: "else".into(),
             }
         );
-        assert_eq!(token.kind, TokenKind::ELSE);
-        assert_eq!(token.literal, "else".into());
     }
 
     #[test]
     fn consume_no_else_keyword() {
         let mut cursor = Cursor::new("abc");
-        let mut span = SpanTracker::new();
 
-        let token = (ELSE_KEYWORD_RULE.consume)(&mut cursor, &mut span);
+        let token = (ELSE_KEYWORD_RULE.consume)(&mut cursor);
 
         assert_eq!(token, None);
     }
 }
 
 const TRUE_KEYWORD_RULE: Rule = Rule {
-    kind: TokenKind::TRUE,
-    consume: |cursor, span| {
+    consume: |cursor| {
         let mut cloned = cursor.clone();
 
         let keyword = "true";
-        let literal = utils::take_series_where(&mut cloned, |c| c.is_ascii_alphabetic())?;
 
-        if &*literal == keyword {
+        cloned.advance_where(|ch| ch.is_ascii_alphabetic());
+
+        let token = cloned.capture(TokenKind::IDENT)?;
+
+        if &*token.literal == keyword {
             for _ in 0..keyword.len() {
                 cursor.advance();
             }
 
-            span.advance(&literal);
-
-            return Some(Token {
-                span: span.capture(),
-                kind: TokenKind::TRUE,
-                literal: literal.into(),
-            });
+            return cursor.capture(TokenKind::TRUE);
         }
 
         None
@@ -1534,58 +1244,50 @@ const TRUE_KEYWORD_RULE: Rule = Rule {
 #[cfg(test)]
 mod true_keyword_tests {
     use super::*;
-    use crate::TokenSpan;
 
     #[test]
     fn consume_true_keyword() {
         let mut cursor = Cursor::new("true");
-        let mut span = SpanTracker::new();
 
-        let token = (TRUE_KEYWORD_RULE.consume)(&mut cursor, &mut span).unwrap();
+        let token = (TRUE_KEYWORD_RULE.consume)(&mut cursor).unwrap();
 
         assert_eq!(
-            token.span,
-            TokenSpan {
+            token,
+            Token {
+                kind: TokenKind::TRUE,
                 line: 1,
                 column: 1,
-                length: 4
+                literal: "true".into(),
             }
         );
-        assert_eq!(token.kind, TokenKind::TRUE);
-        assert_eq!(token.literal, "true".into());
     }
 
     #[test]
     fn consume_no_true_keyword() {
         let mut cursor = Cursor::new("abc");
-        let mut span = SpanTracker::new();
 
-        let token = (TRUE_KEYWORD_RULE.consume)(&mut cursor, &mut span);
+        let token = (TRUE_KEYWORD_RULE.consume)(&mut cursor);
 
         assert_eq!(token, None);
     }
 }
 
 const FALSE_KEYWORD_RULE: Rule = Rule {
-    kind: TokenKind::FALSE,
-    consume: |cursor, span| {
+    consume: |cursor| {
         let mut cloned = cursor.clone();
 
         let keyword = "false";
-        let literal = utils::take_series_where(&mut cloned, |c| c.is_ascii_alphabetic())?;
 
-        if &*literal == keyword {
+        cloned.advance_where(|ch| ch.is_ascii_alphabetic());
+
+        let token = cloned.capture(TokenKind::IDENT)?;
+
+        if &*token.literal == keyword {
             for _ in 0..keyword.len() {
                 cursor.advance();
             }
 
-            span.advance(&literal);
-
-            return Some(Token {
-                span: span.capture(),
-                kind: TokenKind::FALSE,
-                literal: literal.into(),
-            });
+            return cursor.capture(TokenKind::FALSE);
         }
 
         None
@@ -1595,84 +1297,101 @@ const FALSE_KEYWORD_RULE: Rule = Rule {
 #[cfg(test)]
 mod false_keyword_tests {
     use super::*;
-    use crate::TokenSpan;
 
     #[test]
     fn consume_false_keyword() {
         let mut cursor = Cursor::new("false");
-        let mut span = SpanTracker::new();
 
-        let token = (FALSE_KEYWORD_RULE.consume)(&mut cursor, &mut span).unwrap();
+        let token = (FALSE_KEYWORD_RULE.consume)(&mut cursor).unwrap();
 
         assert_eq!(
-            token.span,
-            TokenSpan {
+            token,
+            Token {
+                kind: TokenKind::FALSE,
                 line: 1,
                 column: 1,
-                length: 5
+                literal: "false".into(),
             }
         );
-        assert_eq!(token.kind, TokenKind::FALSE);
-        assert_eq!(token.literal, "false".into());
     }
 
     #[test]
     fn consume_no_false_keyword() {
         let mut cursor = Cursor::new("abc");
-        let mut span = SpanTracker::new();
 
-        let token = (FALSE_KEYWORD_RULE.consume)(&mut cursor, &mut span);
+        let token = (FALSE_KEYWORD_RULE.consume)(&mut cursor);
 
         assert_eq!(token, None);
     }
 }
 
 const IDENTIFIER_RULE: Rule = Rule {
-    kind: TokenKind::IDENT,
-    consume: |cursor, span| {
-        let literal = utils::take_series_where(cursor, |c| c.is_ascii_alphabetic() || *c == '_')?;
-
-        span.advance(&literal);
-
-        Some(Token {
-            span: span.capture(),
-            kind: TokenKind::IDENT,
-            literal,
-        })
+    consume: |cursor| {
+        cursor.advance_where(|ch| ch.is_ascii_alphabetic() || *ch == '_');
+        cursor.capture(TokenKind::IDENT)
     },
 };
 
 #[cfg(test)]
 mod identifier_tests {
     use super::*;
-    use crate::TokenSpan;
 
     #[test]
     fn consume_identifier() {
         let mut cursor = Cursor::new("abc");
-        let mut span = SpanTracker::new();
 
-        let token = (IDENTIFIER_RULE.consume)(&mut cursor, &mut span).unwrap();
+        let token = (IDENTIFIER_RULE.consume)(&mut cursor).unwrap();
 
         assert_eq!(
-            token.span,
-            TokenSpan {
+            token,
+            Token {
+                kind: TokenKind::IDENT,
                 line: 1,
                 column: 1,
-                length: 3
+                literal: "abc".into(),
             }
         );
-        assert_eq!(token.kind, TokenKind::IDENT);
-        assert_eq!(token.literal, "abc".into());
     }
 
     #[test]
     fn consume_no_identifier() {
         let mut cursor = Cursor::new("123");
-        let mut span = SpanTracker::new();
 
-        let token = (IDENTIFIER_RULE.consume)(&mut cursor, &mut span);
+        let token = (IDENTIFIER_RULE.consume)(&mut cursor);
 
         assert_eq!(token, None);
+    }
+}
+
+pub const ILLEGAL_RULE: Rule = Rule {
+    consume: |cursor| {
+        if cursor.current().is_none() {
+            return None;
+        }
+
+        cursor.advance();
+        cursor.capture(TokenKind::ILLEGAL)
+    },
+};
+
+#[cfg(test)]
+mod illegal_tests {
+    use super::*;
+
+    #[test]
+    fn consume_illegal() {
+        let mut cursor = Cursor::new("$let x = 5;");
+
+        let token = (ILLEGAL_RULE.consume)(&mut cursor).unwrap();
+
+        assert_eq!(
+            token,
+            Token {
+                kind: TokenKind::ILLEGAL,
+                line: 1,
+                column: 1,
+                literal: "$".into(),
+            }
+        );
     }
 }
