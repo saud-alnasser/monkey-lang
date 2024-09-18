@@ -94,11 +94,11 @@ impl<'a> Cursor<'a> {
         None
     }
 
-    pub const fn current(&self) -> Option<char> {
+    pub const fn first(&self) -> Option<char> {
         self.current
     }
 
-    pub const fn next(&self) -> Option<char> {
+    pub const fn second(&self) -> Option<char> {
         self.next
     }
 }
