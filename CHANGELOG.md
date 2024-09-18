@@ -1,3 +1,9 @@
+## 0.0.11 (2024-09-18)
+
+### Features
+
+#### use single prefix for error messages (#83)
+
 ## 0.0.10 (2024-05-03)
 
 ### Features
