@@ -1,5 +1,8 @@
+mod cursor;
 mod rules;
 mod utils;
+
+use cursor::Cursor;
 
 use crate::{
     lexer::{
@@ -8,11 +11,10 @@ use crate::{
     },
     Token, TokenKind,
 };
-use std::{iter::Peekable, str::Chars};
 
 #[derive(Debug)]
 pub struct Lexer<'a> {
-    chars: Peekable<Chars<'a>>,
+    cursor: Cursor<'a>,
     span: SpanTracker,
     rules: Vec<Rule>,
     peeked: Option<Token>,
@@ -22,7 +24,7 @@ pub struct Lexer<'a> {
 impl Lexer<'_> {
     pub fn new<'a>(input: &'a str) -> Lexer<'a> {
         Lexer {
-            chars: input.trim_start().chars().peekable(),
+            cursor: Cursor::new(input),
             span: SpanTracker::new(),
             rules: RULES.to_vec(),
             peeked: None,
@@ -36,18 +38,18 @@ impl Lexer<'_> {
         }
 
         for rule in &self.rules {
-            if let Some(token) = (rule.consume)(&mut self.chars, &mut self.span) {
+            if let Some(token) = (rule.consume)(&mut self.cursor, &mut self.span) {
                 return Some(token);
             }
         }
 
         self.exhausted = true;
 
-        if self.chars.peek().is_some() {
+        if self.cursor.current().is_some() {
             return Some(Token {
                 span: self.span.capture(),
                 kind: TokenKind::ILLEGAL,
-                literal: match self.chars.next() {
+                literal: match self.cursor.current() {
                     Some(c) => c.to_string().into_boxed_str(),
                     None => "\0".into(),
                 },
