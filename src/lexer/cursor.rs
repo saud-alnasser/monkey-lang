@@ -5,8 +5,8 @@ use crate::{Token, TokenKind};
 #[derive(Debug, Clone)]
 pub struct Cursor<'a> {
     chars: Chars<'a>,
-    current: Option<char>,
-    next: Option<char>,
+    first: Option<char>,
+    second: Option<char>,
     line: usize,
     column: usize,
     literal: Option<String>,
@@ -16,8 +16,8 @@ impl<'a> Cursor<'a> {
     pub fn new(input: &'a str) -> Self {
         let mut cursor = Self {
             chars: input.chars(),
-            current: None,
-            next: None,
+            first: None,
+            second: None,
             line: 1,
             column: 0,
             literal: None,
@@ -29,7 +29,7 @@ impl<'a> Cursor<'a> {
     }
 
     pub fn advance(&mut self) {
-        if let Some(ch) = self.current {
+        if let Some(ch) = self.first {
             match ch {
                 '\n' => {
                     self.line += 1;
@@ -46,19 +46,19 @@ impl<'a> Cursor<'a> {
             }
         }
 
-        self.current = match self.next.take() {
+        self.first = match self.second.take() {
             Some(c) => Some(c),
             None => self.chars.next(),
         };
 
-        self.next = self.chars.next();
+        self.second = self.chars.next();
     }
 
     pub fn advance_where<F>(&mut self, predicate: F)
     where
         F: Fn(&char) -> bool,
     {
-        while let Some(c) = self.current {
+        while let Some(c) = self.first {
             match predicate(&c) {
                 true => self.advance(),
                 false => break,
@@ -95,10 +95,10 @@ impl<'a> Cursor<'a> {
     }
 
     pub const fn first(&self) -> Option<char> {
-        self.current
+        self.first
     }
 
     pub const fn second(&self) -> Option<char> {
-        self.next
+        self.second
     }
 }
