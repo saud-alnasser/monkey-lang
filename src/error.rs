@@ -1,8 +1,8 @@
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
-    #[error("parse error: {0}")]
+    #[error(transparent)]
     Parser(#[from] crate::parser::error::Error),
-    #[error("evaluation error: {0}")]
+    #[error(transparent)]
     Evaluator(#[from] crate::evaluator::error::Error),
 }
 
