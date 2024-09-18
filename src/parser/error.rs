@@ -29,7 +29,7 @@ impl Display for Error {
                 Some(token) => write!(
                     f,
                     "expected opening parenthesis, got {} at {}:{}",
-                    token.literal, token.span.line, token.span.column
+                    token.literal, token.line, token.column
                 ),
                 None => write!(f, "expected opening parenthesis, got EOF"),
             },
@@ -37,7 +37,7 @@ impl Display for Error {
                 Some(token) => write!(
                     f,
                     "expected closing parenthesis, got {} at {}:{}",
-                    token.literal, token.span.line, token.span.column
+                    token.literal, token.line, token.column
                 ),
                 None => write!(f, "expected closing parenthesis, got EOF"),
             },
@@ -45,7 +45,7 @@ impl Display for Error {
                 Some(token) => write!(
                     f,
                     "expected opening brace, got {} at {}:{}",
-                    token.literal, token.span.line, token.span.column
+                    token.literal, token.line, token.column
                 ),
                 None => write!(f, "expected opening brace, got EOF"),
             },
@@ -53,7 +53,7 @@ impl Display for Error {
                 Some(token) => write!(
                     f,
                     "expected closing brace, got {} at {}:{}",
-                    token.literal, token.span.line, token.span.column
+                    token.literal, token.line, token.column
                 ),
                 None => write!(f, "expected closing brace, got EOF"),
             },
@@ -61,7 +61,7 @@ impl Display for Error {
                 Some(token) => write!(
                     f,
                     "expected opening bracket, got {} at {}:{}",
-                    token.literal, token.span.line, token.span.column
+                    token.literal, token.line, token.column
                 ),
                 None => write!(f, "expected opening bracket, got EOF"),
             },
@@ -69,7 +69,7 @@ impl Display for Error {
                 Some(token) => write!(
                     f,
                     "expected closing bracket, got {} at {}:{}",
-                    token.literal, token.span.line, token.span.column
+                    token.literal, token.line, token.column
                 ),
                 None => write!(f, "expected closing bracket, got EOF"),
             },
@@ -77,7 +77,7 @@ impl Display for Error {
                 Some(token) => write!(
                     f,
                     "expected let keyword, got {} at {}:{}",
-                    token.literal, token.span.line, token.span.column
+                    token.literal, token.line, token.column
                 ),
                 None => write!(f, "expected let keyword, got EOF"),
             },
@@ -85,7 +85,7 @@ impl Display for Error {
                 Some(token) => write!(
                     f,
                     "expected assignment operator, got {} at {}:{}",
-                    token.literal, token.span.line, token.span.column
+                    token.literal, token.line, token.column
                 ),
                 None => write!(f, "expected assignment operator, got EOF"),
             },
@@ -93,7 +93,7 @@ impl Display for Error {
                 Some(token) => write!(
                     f,
                     "expected return keyword, got {} at {}:{}",
-                    token.literal, token.span.line, token.span.column
+                    token.literal, token.line, token.column
                 ),
                 None => write!(f, "expected return keyword, got EOF"),
             },
@@ -101,7 +101,7 @@ impl Display for Error {
                 Some(token) => write!(
                     f,
                     "expected semicolon, got {} at {}:{}",
-                    token.literal, token.span.line, token.span.column
+                    token.literal, token.line, token.column
                 ),
                 None => write!(f, "expected semicolon, got EOF"),
             },
@@ -109,7 +109,7 @@ impl Display for Error {
                 Some(token) => write!(
                     f,
                     "expected identifier, got {} at {}:{}",
-                    token.literal, token.span.line, token.span.column
+                    token.literal, token.line, token.column
                 ),
                 None => write!(f, "expected identifier, got EOF"),
             },
@@ -117,19 +117,19 @@ impl Display for Error {
                 Some(token) => write!(
                     f,
                     "expected block statement, got {} at {}:{}",
-                    token.literal, token.span.line, token.span.column
+                    token.literal, token.line, token.column
                 ),
                 None => write!(f, "expected block statement, got EOF"),
             },
             Error::UnexpectedToken(token) => write!(
                 f,
                 "unexpected token {} at {}:{}",
-                token.literal, token.span.line, token.span.column
+                token.literal, token.line, token.column
             ),
             Error::IllegalToken(token) => write!(
                 f,
                 "illegal token {} at {}:{}",
-                token.literal, token.span.line, token.span.column
+                token.literal, token.line, token.column
             ),
         }
     }

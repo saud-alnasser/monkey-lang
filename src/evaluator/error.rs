@@ -18,20 +18,20 @@ impl Display for Error {
             Error::TypeMismatch(left, token, right) => write!(
                 f,
                 "type mismatch {:?} {} {:?} at {}:{}",
-                left, token.literal, right, token.span.line, token.span.column
+                left, token.literal, right, token.line, token.column
             ),
             Error::IndexTypeMismatch(value, token) => {
                 write!(
                     f,
                     "index type mismatch got={:?}, want=INT at {}:{}",
-                    value, token.span.line, token.span.column
+                    value, token.line, token.column
                 )
             }
             Error::UnknownOperator(token) => {
                 write!(
                     f,
                     "unknown operator {} at {}:{}",
-                    token.literal, token.span.line, token.span.column
+                    token.literal, token.line, token.column
                 )
             }
             Error::UndefinedVariable(value) => {

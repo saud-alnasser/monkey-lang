@@ -47,15 +47,9 @@ pub enum TokenKind {
 }
 
 #[derive(Debug, PartialEq, Clone)]
-pub struct TokenSpan {
-    pub line: usize,
-    pub column: usize,
-    pub length: usize,
-}
-
-#[derive(Debug, PartialEq, Clone)]
 pub struct Token {
     pub kind: TokenKind,
-    pub span: TokenSpan,
+    pub line: usize,
+    pub column: usize,
     pub literal: Box<str>,
 }
