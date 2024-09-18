@@ -86,7 +86,7 @@ mod whitespace_tests {
 
 const ASSIGN_OPERATOR_RULE: Rule = Rule {
     consume: |cursor| {
-        if let '=' = cursor.current()? {
+        if let '=' = cursor.first()? {
             cursor.advance();
 
             return cursor.capture(TokenKind::ASSIGN);
@@ -131,7 +131,7 @@ mod assign_operator_tests {
 
 const PLUS_OPERATOR_RULE: Rule = Rule {
     consume: |cursor| {
-        if let '+' = cursor.current()? {
+        if let '+' = cursor.first()? {
             cursor.advance();
 
             return cursor.capture(TokenKind::PLUS);
@@ -174,7 +174,7 @@ mod plus_operator_tests {
 
 const MINUS_OPERATOR_RULE: Rule = Rule {
     consume: |cursor| {
-        if let '-' = cursor.current()? {
+        if let '-' = cursor.first()? {
             cursor.advance();
 
             return cursor.capture(TokenKind::MINUS);
@@ -217,7 +217,7 @@ mod minus_operator_tests {
 
 const ASTERISK_OPERATOR_RULE: Rule = Rule {
     consume: |cursor| {
-        if let '*' = cursor.current()? {
+        if let '*' = cursor.first()? {
             cursor.advance();
 
             return cursor.capture(TokenKind::ASTERISK);
@@ -260,7 +260,7 @@ mod asterisk_operator_tests {
 
 const SLASH_OPERATOR_RULE: Rule = Rule {
     consume: |cursor| {
-        if let '/' = cursor.current()? {
+        if let '/' = cursor.first()? {
             cursor.advance();
 
             return cursor.capture(TokenKind::SLASH);
@@ -303,7 +303,7 @@ mod slash_operator_tests {
 
 const BANG_OPERATOR_RULE: Rule = Rule {
     consume: |cursor| {
-        if let '!' = cursor.current()? {
+        if let '!' = cursor.first()? {
             cursor.advance();
 
             return cursor.capture(TokenKind::BANG);
@@ -346,7 +346,7 @@ mod bang_operator_tests {
 
 const GT_OPERATOR_RULE: Rule = Rule {
     consume: |cursor| {
-        if let '>' = cursor.current()? {
+        if let '>' = cursor.first()? {
             cursor.advance();
 
             return cursor.capture(TokenKind::GT);
@@ -389,7 +389,7 @@ mod gt_operator_tests {
 
 const LT_OPERATOR_RULE: Rule = Rule {
     consume: |cursor| {
-        if let '<' = cursor.current()? {
+        if let '<' = cursor.first()? {
             cursor.advance();
 
             return cursor.capture(TokenKind::LT);
@@ -432,8 +432,8 @@ mod lt_operator_tests {
 
 const EQ_OPERATOR_RULE: Rule = Rule {
     consume: |cursor| {
-        if let '=' = cursor.current()? {
-            if let '=' = cursor.next()? {
+        if let '=' = cursor.first()? {
+            if let '=' = cursor.second()? {
                 cursor.advance();
                 cursor.advance();
 
@@ -478,8 +478,8 @@ mod eq_operator_tests {
 
 const NEQ_OPERATOR_RULE: Rule = Rule {
     consume: |cursor| {
-        if let '!' = cursor.current()? {
-            if let '=' = cursor.next()? {
+        if let '!' = cursor.first()? {
+            if let '=' = cursor.second()? {
                 cursor.advance();
                 cursor.advance();
 
@@ -524,8 +524,8 @@ mod neq_operator_tests {
 
 const LTE_OPERATOR_RULE: Rule = Rule {
     consume: |cursor| {
-        if let '<' = cursor.current()? {
-            if let '=' = cursor.next()? {
+        if let '<' = cursor.first()? {
+            if let '=' = cursor.second()? {
                 cursor.advance();
                 cursor.advance();
 
@@ -570,8 +570,8 @@ mod lte_operator_tests {
 
 const GTE_OPERATOR_RULE: Rule = Rule {
     consume: |cursor| {
-        if let '>' = cursor.current()? {
-            if let '=' = cursor.next()? {
+        if let '>' = cursor.first()? {
+            if let '=' = cursor.second()? {
                 cursor.advance();
                 cursor.advance();
 
@@ -616,7 +616,7 @@ mod gte_operator_tests {
 
 const COMMA_DELIMITER_RULE: Rule = Rule {
     consume: |cursor| {
-        if let ',' = cursor.current()? {
+        if let ',' = cursor.first()? {
             cursor.advance();
 
             return cursor.capture(TokenKind::COMMA);
@@ -659,7 +659,7 @@ mod comma_delimiter_tests {
 
 const SEMICOLON_DELIMITER_RULE: Rule = Rule {
     consume: |cursor| {
-        if let ';' = cursor.current()? {
+        if let ';' = cursor.first()? {
             cursor.advance();
 
             return cursor.capture(TokenKind::SEMICOLON);
@@ -701,7 +701,7 @@ mod semicolon_delimiter_tests {
 }
 
 const PARENTHESES_RULE: Rule = Rule {
-    consume: |cursor| match cursor.current()? {
+    consume: |cursor| match cursor.first()? {
         '(' => {
             cursor.advance();
             cursor.capture(TokenKind::LPAREN)
@@ -758,7 +758,7 @@ mod parentheses_tests {
 }
 
 const BRACES_RULE: Rule = Rule {
-    consume: |cursor| match cursor.current()? {
+    consume: |cursor| match cursor.first()? {
         '{' => {
             cursor.advance();
             cursor.capture(TokenKind::LBRACE)
@@ -815,7 +815,7 @@ mod braces_tests {
 }
 
 const BRACKETS_RULE: Rule = Rule {
-    consume: |cursor| match cursor.current()? {
+    consume: |cursor| match cursor.first()? {
         '[' => {
             cursor.advance();
             cursor.capture(TokenKind::LBRACKET)
@@ -873,7 +873,7 @@ mod brackets_tests {
 
 const STRINGS_RULE: Rule = Rule {
     consume: |cursor| {
-        if let '"' = cursor.current()? {
+        if let '"' = cursor.first()? {
             cursor.advance();
             cursor.advance_where(|c| *c != '"');
             cursor.advance();
@@ -1365,7 +1365,7 @@ mod identifier_tests {
 
 pub const ILLEGAL_RULE: Rule = Rule {
     consume: |cursor| {
-        if cursor.current().is_none() {
+        if cursor.first().is_none() {
             return None;
         }
 
