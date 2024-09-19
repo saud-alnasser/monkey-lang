@@ -1,3 +1,9 @@
+## 0.0.12 (2024-09-19)
+
+### Features
+
+#### use better names of cursor pointers (#85)
+
 ## 0.0.11 (2024-09-18)
 
 ### Features
