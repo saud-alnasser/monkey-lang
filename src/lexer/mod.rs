@@ -26,7 +26,7 @@ impl Lexer<'_> {
         }
     }
 
-    fn advance(&mut self) -> Option<Token> {
+    fn capture(&mut self) -> Option<Token> {
         if self.exhausted {
             return None;
         }
@@ -44,7 +44,7 @@ impl Lexer<'_> {
 
     pub fn peek(&mut self) -> Option<&Token> {
         if self.peeked.is_none() {
-            self.peeked = self.advance();
+            self.peeked = self.capture();
         }
 
         self.peeked.as_ref()
@@ -53,7 +53,7 @@ impl Lexer<'_> {
     pub fn next(&mut self) -> Option<Token> {
         match self.peeked.take() {
             Some(token) => Some(token),
-            None => self.advance(),
+            None => self.capture(),
         }
     }
 }
