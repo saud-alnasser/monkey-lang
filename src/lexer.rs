@@ -124,11 +124,11 @@ impl Lexer<'_> {
             return None;
         }
 
-        // consume whitespace
+        // capture whitespace
         self.cursor.advance_where(|ch| ch.is_whitespace());
         self.cursor.capture(TokenKind::WHITESPACE);
 
-        // consume eq_operator
+        // capture eq_operator
         if let Some('=') = self.cursor.first() {
             if let Some('=') = self.cursor.second() {
                 self.cursor.advance();
@@ -138,7 +138,7 @@ impl Lexer<'_> {
             }
         }
 
-        // consume neq_operator
+        // capture neq_operator
         if let Some('!') = self.cursor.first() {
             if let Some('=') = self.cursor.second() {
                 self.cursor.advance();
@@ -148,7 +148,7 @@ impl Lexer<'_> {
             }
         }
 
-        // consume lte_operator
+        // capture lte_operator
         if let Some('<') = self.cursor.first() {
             if let Some('=') = self.cursor.second() {
                 self.cursor.advance();
@@ -158,7 +158,7 @@ impl Lexer<'_> {
             }
         }
 
-        // consume gte_operator
+        // capture gte_operator
         if let Some('>') = self.cursor.first() {
             if let Some('=') = self.cursor.second() {
                 self.cursor.advance();
@@ -168,119 +168,119 @@ impl Lexer<'_> {
             }
         }
 
-        // consume assignment_operator
+        // capture assignment_operator
         if let Some('=') = self.cursor.first() {
             self.cursor.advance();
 
             return self.cursor.capture(TokenKind::ASSIGN);
         }
 
-        // consume plus_operator
+        // capture plus_operator
         if let Some('+') = self.cursor.first() {
             self.cursor.advance();
 
             return self.cursor.capture(TokenKind::PLUS);
         }
 
-        // consume minus_operator
+        // capture minus_operator
         if let Some('-') = self.cursor.first() {
             self.cursor.advance();
 
             return self.cursor.capture(TokenKind::MINUS);
         }
 
-        // consume asterisk_operator
+        // capture asterisk_operator
         if let Some('*') = self.cursor.first() {
             self.cursor.advance();
 
             return self.cursor.capture(TokenKind::ASTERISK);
         }
 
-        // consume slash_operator
+        // capture slash_operator
         if let Some('/') = self.cursor.first() {
             self.cursor.advance();
 
             return self.cursor.capture(TokenKind::SLASH);
         }
 
-        // consume bang_operator
+        // capture bang_operator
         if let Some('!') = self.cursor.first() {
             self.cursor.advance();
 
             return self.cursor.capture(TokenKind::BANG);
         }
 
-        // consume gt_operator
+        // capture gt_operator
         if let Some('>') = self.cursor.first() {
             self.cursor.advance();
 
             return self.cursor.capture(TokenKind::GT);
         }
 
-        // consume lt_operator
+        // capture lt_operator
         if let Some('<') = self.cursor.first() {
             self.cursor.advance();
 
             return self.cursor.capture(TokenKind::LT);
         }
 
-        // consume comma_delimiter
+        // capture comma_delimiter
         if let Some(',') = self.cursor.first() {
             self.cursor.advance();
 
             return self.cursor.capture(TokenKind::COMMA);
         }
 
-        // consume semicolon_delimiter
+        // capture semicolon_delimiter
         if let Some(';') = self.cursor.first() {
             self.cursor.advance();
 
             return self.cursor.capture(TokenKind::SEMICOLON);
         }
 
-        // consume left parentheses
+        // capture left parentheses
         if let Some('(') = self.cursor.first() {
             self.cursor.advance();
 
             return self.cursor.capture(TokenKind::LPAREN);
         }
 
-        // consume right parentheses
+        // capture right parentheses
         if let Some(')') = self.cursor.first() {
             self.cursor.advance();
 
             return self.cursor.capture(TokenKind::RPAREN);
         }
 
-        // consume left braces
+        // capture left braces
         if let Some('{') = self.cursor.first() {
             self.cursor.advance();
 
             return self.cursor.capture(TokenKind::LBRACE);
         }
 
-        // consume right braces
+        // capture right braces
         if let Some('}') = self.cursor.first() {
             self.cursor.advance();
 
             return self.cursor.capture(TokenKind::RBRACE);
         }
 
-        // consume left brackets
+        // capture left brackets
         if let Some('[') = self.cursor.first() {
             self.cursor.advance();
 
             return self.cursor.capture(TokenKind::LBRACKET);
         }
 
-        // consume right brackets
+        // capture right brackets
         if let Some(']') = self.cursor.first() {
             self.cursor.advance();
 
             return self.cursor.capture(TokenKind::RBRACKET);
         }
 
-        // consume string_literal
+        // capture string_literal
         if let Some('"') = self.cursor.first() {
             self.cursor.advance();
             self.cursor.advance_where(|c| *c != '"');
@@ -289,19 +289,19 @@ impl Lexer<'_> {
             return self.cursor.capture(TokenKind::STRING);
         }
 
-        // consume integer_literal
+        // capture integer_literal
         self.cursor.advance_where(|ch| ch.is_ascii_digit());
 
         if let Some(token) = self.cursor.capture(TokenKind::INT) {
             return Some(token);
         }
 
-        // consume identifier
+        // capture identifier
         self.cursor
             .advance_where(|ch| ch.is_ascii_alphabetic() || *ch == '_');
 
         if let Some(mut token) = self.cursor.capture(TokenKind::IDENT) {
-            // consume keywords
+            // capture keywords
             if "let" == &*token.literal {
                 token.kind = TokenKind::LET;
             }
@@ -373,7 +373,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn consume_whitespace() {
+    fn capture_whitespace() {
         let mut lexer = Lexer::new("  \n ");
 
         let token = lexer.next().unwrap();
@@ -382,7 +382,7 @@ mod tests {
     }
 
     #[test]
-    fn consume_eq_operator() {
+    fn capture_eq_operator() {
         let mut lexer = Lexer::new("==");
 
         let token = lexer.next().unwrap();
@@ -391,7 +391,7 @@ mod tests {
     }
 
     #[test]
-    fn consume_not_eq_operator() {
+    fn capture_not_eq_operator() {
         let mut lexer = Lexer::new("!=");
 
         let token = lexer.next().unwrap();
@@ -400,7 +400,7 @@ mod tests {
     }
 
     #[test]
-    fn consume_lte_operator() {
+    fn capture_lte_operator() {
         let mut lexer = Lexer::new("<=");
 
         let token = lexer.next().unwrap();
@@ -409,7 +409,7 @@ mod tests {
     }
 
     #[test]
-    fn consume_gte_operator() {
+    fn capture_gte_operator() {
         let mut lexer = Lexer::new(">=");
 
         let token = lexer.next().unwrap();
@@ -418,7 +418,7 @@ mod tests {
     }
 
     #[test]
-    fn consume_assignment_operator() {
+    fn capture_assignment_operator() {
         let mut lexer = Lexer::new("=");
 
         let token = lexer.next().unwrap();
@@ -427,7 +427,7 @@ mod tests {
     }
 
     #[test]
-    fn consume_plus_operator() {
+    fn capture_plus_operator() {
         let mut lexer = Lexer::new("+");
 
         let token = lexer.next().unwrap();
@@ -436,7 +436,7 @@ mod tests {
     }
 
     #[test]
-    fn consume_minus_operator() {
+    fn capture_minus_operator() {
         let mut lexer = Lexer::new("-");
 
         let token = lexer.next().unwrap();
@@ -445,7 +445,7 @@ mod tests {
     }
 
     #[test]
-    fn consume_asterisk_operator() {
+    fn capture_asterisk_operator() {
         let mut lexer = Lexer::new("*");
 
         let token = lexer.next().unwrap();
@@ -454,7 +454,7 @@ mod tests {
     }
 
     #[test]
-    fn consume_slash_operator() {
+    fn capture_slash_operator() {
         let mut lexer = Lexer::new("/");
 
         let token = lexer.next().unwrap();
@@ -463,7 +463,7 @@ mod tests {
     }
 
     #[test]
-    fn consume_bang_operator() {
+    fn capture_bang_operator() {
         let mut lexer = Lexer::new("!");
 
         let token = lexer.next().unwrap();
@@ -472,7 +472,7 @@ mod tests {
     }
 
     #[test]
-    fn consume_gt_operator() {
+    fn capture_gt_operator() {
         let mut lexer = Lexer::new(">");
 
         let token = lexer.next().unwrap();
@@ -481,7 +481,7 @@ mod tests {
     }
 
     #[test]
-    fn consume_lt_operator() {
+    fn capture_lt_operator() {
         let mut lexer = Lexer::new("<");
 
         let token = lexer.next().unwrap();
@@ -490,7 +490,7 @@ mod tests {
     }
 
     #[test]
-    fn consume_comma_delimiter() {
+    fn capture_comma_delimiter() {
         let mut lexer = Lexer::new(",");
 
         let token = lexer.next().unwrap();
@@ -499,7 +499,7 @@ mod tests {
     }
 
     #[test]
-    fn consume_semicolon_delimiter() {
+    fn capture_semicolon_delimiter() {
         let mut lexer = Lexer::new(";");
 
         let token = lexer.next().unwrap();
@@ -508,7 +508,7 @@ mod tests {
     }
 
     #[test]
-    fn consume_parentheses() {
+    fn capture_parentheses() {
         let mut lexer = Lexer::new("()");
 
         assert_eq!(lexer.next().unwrap().kind, TokenKind::LPAREN);
@@ -516,7 +516,7 @@ mod tests {
     }
 
     #[test]
-    fn consume_braces() {
+    fn capture_braces() {
         let mut lexer = Lexer::new("{}");
 
         assert_eq!(lexer.next().unwrap().kind, TokenKind::LBRACE);
@@ -524,7 +524,7 @@ mod tests {
     }
 
     #[test]
-    fn consume_brackets() {
+    fn capture_brackets() {
         let mut lexer = Lexer::new("[]");
 
         assert_eq!(lexer.next().unwrap().kind, TokenKind::LBRACKET);
@@ -532,7 +532,7 @@ mod tests {
     }
 
     #[test]
-    fn consume_string_literal() {
+    fn capture_string_literal() {
         let mut lexer = Lexer::new("\"hello, world!\"");
 
         let token = lexer.next().unwrap();
@@ -541,7 +541,7 @@ mod tests {
     }
 
     #[test]
-    fn consume_integer_literal() {
+    fn capture_integer_literal() {
         let mut lexer = Lexer::new("123");
 
         let token = lexer.next().unwrap();
@@ -550,7 +550,7 @@ mod tests {
     }
 
     #[test]
-    fn consume_ident() {
+    fn capture_ident() {
         let mut lexer = Lexer::new("abc");
 
         let token = lexer.next().unwrap();
@@ -559,7 +559,7 @@ mod tests {
     }
 
     #[test]
-    fn consume_let_keyword() {
+    fn capture_let_keyword() {
         let mut lexer = Lexer::new("let");
 
         let token = lexer.next().unwrap();
@@ -568,7 +568,7 @@ mod tests {
     }
 
     #[test]
-    fn consume_fn_keyword() {
+    fn capture_fn_keyword() {
         let mut lexer = Lexer::new("fn");
 
         let token = lexer.next().unwrap();
@@ -577,7 +577,7 @@ mod tests {
     }
 
     #[test]
-    fn consume_return_keyword() {
+    fn capture_return_keyword() {
         let mut lexer = Lexer::new("return");
 
         let token = lexer.next().unwrap();
@@ -586,7 +586,7 @@ mod tests {
     }
 
     #[test]
-    fn consume_if_keyword() {
+    fn capture_if_keyword() {
         let mut lexer = Lexer::new("if");
 
         let token = lexer.next().unwrap();
@@ -595,7 +595,7 @@ mod tests {
     }
 
     #[test]
-    fn consume_else_keyword() {
+    fn capture_else_keyword() {
         let mut lexer = Lexer::new("else");
 
         let token = lexer.next().unwrap();
@@ -604,7 +604,7 @@ mod tests {
     }
 
     #[test]
-    fn consume_true_keyword() {
+    fn capture_true_keyword() {
         let mut lexer = Lexer::new("true");
 
         let token = lexer.next().unwrap();
@@ -613,7 +613,7 @@ mod tests {
     }
 
     #[test]
-    fn consume_false_keyword() {
+    fn capture_false_keyword() {
         let mut lexer = Lexer::new("false");
 
         let token = lexer.next().unwrap();
@@ -622,7 +622,7 @@ mod tests {
     }
 
     #[test]
-    fn consume_illegal_literal() {
+    fn capture_illegal_literal() {
         let mut lexer = Lexer::new("$");
 
         let token = lexer.next().unwrap();
@@ -631,7 +631,7 @@ mod tests {
     }
 
     #[test]
-    fn consume_eof() {
+    fn capture_eof() {
         let mut lexer = Lexer::new("");
 
         let token = lexer.next().unwrap();
