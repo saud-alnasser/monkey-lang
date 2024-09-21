@@ -13,7 +13,7 @@ pub struct StatementParser;
 impl StatementParser {
     pub fn parse(lexer: &mut Lexer) -> Result<Statement> {
         for rule in &STATEMENT_RULES {
-            if let Some(statement) = Rule::parse(&None, rule, lexer)? {
+            if let Some(statement) = rule.parse(lexer, None)? {
                 return Ok(statement);
             }
         }
@@ -35,92 +35,115 @@ const STATEMENT_RULES: [Rule<Statement>; 4] = [
 ];
 
 const BLOCK_STATEMENT_RULE: Rule<Statement> = Rule {
-    accept: |token| token.kind == TokenKind::LBRACE,
-    parse: |lexer, _| {
-        let token = match lexer.next() {
-            Some(token) if token.kind == TokenKind::LBRACE => token,
-            option => return Err(Error::MissingOpeningBrace(option)),
-        };
-
-        let mut statements = Vec::new();
-
-        while let Some(token) = lexer.peek() {
-            if token.kind == TokenKind::RBRACE {
-                break;
+    consume: |lexer, _| {
+        if let Some(token) = lexer.peek() {
+            if token.kind != TokenKind::LBRACE {
+                return Ok(None);
             }
 
-            statements.push(StatementParser::parse(lexer)?);
+            let token = match lexer.next() {
+                Some(token) if token.kind == TokenKind::LBRACE => token,
+                option => return Err(Error::MissingOpeningBrace(option)),
+            };
+
+            let mut statements = Vec::new();
+
+            while let Some(token) = lexer.peek() {
+                if token.kind == TokenKind::RBRACE {
+                    break;
+                }
+
+                statements.push(StatementParser::parse(lexer)?);
+            }
+
+            match lexer.next() {
+                Some(token) if token.kind == TokenKind::RBRACE => token,
+                option => return Err(Error::MissingClosingBrace(option)),
+            };
+
+            return Ok(Some(Statement::Block(BlockStatement { token, statements })));
         }
 
-        match lexer.next() {
-            Some(token) if token.kind == TokenKind::RBRACE => token,
-            option => return Err(Error::MissingClosingBrace(option)),
-        };
-
-        Ok(Statement::Block(BlockStatement { token, statements }))
+        Ok(None)
     },
     dependents: None,
 };
 
 const LET_STATEMENT_RULE: Rule<Statement> = Rule {
-    accept: |token| token.kind == TokenKind::LET,
-    parse: |lexer, _| {
-        let token = match lexer.next() {
-            Some(token) if token.kind == TokenKind::LET => token,
-            option => return Err(Error::MissingLetKeyword(option)),
-        };
+    consume: |lexer, _| {
+        if let Some(token) = lexer.peek() {
+            if token.kind != TokenKind::LET {
+                return Ok(None);
+            }
 
-        let identifier = match lexer.next() {
-            Some(token) if token.kind == TokenKind::IDENT => token.literal,
-            option => return Err(Error::MissingIdentifier(option)),
-        };
+            let token = match lexer.next() {
+                Some(token) if token.kind == TokenKind::LET => token,
+                option => return Err(Error::MissingLetKeyword(option)),
+            };
 
-        match lexer.next() {
-            Some(token) if token.kind == TokenKind::ASSIGN => token,
-            option => return Err(Error::MissingAssignmentOperator(option)),
-        };
+            let identifier = match lexer.next() {
+                Some(token) if token.kind == TokenKind::IDENT => token.literal,
+                option => return Err(Error::MissingIdentifier(option)),
+            };
 
-        let expression = ExpressionParser::parse(lexer, &Precedence::LOWEST)?;
+            match lexer.next() {
+                Some(token) if token.kind == TokenKind::ASSIGN => token,
+                option => return Err(Error::MissingAssignmentOperator(option)),
+            };
 
-        match lexer.next() {
-            Some(token) if token.kind == TokenKind::SEMICOLON => token,
-            option => return Err(Error::MissingSemicolon(option)),
-        };
+            let expression = ExpressionParser::parse(lexer, &Precedence::LOWEST)?;
 
-        Ok(Statement::Let(LetStatement {
-            token,
-            identifier,
-            expression,
-        }))
+            match lexer.next() {
+                Some(token) if token.kind == TokenKind::SEMICOLON => token,
+                option => return Err(Error::MissingSemicolon(option)),
+            };
+
+            return Ok(Some(Statement::Let(LetStatement {
+                token,
+                identifier,
+                expression,
+            })));
+        }
+
+        Ok(None)
     },
+
     dependents: None,
 };
 
 const RETURN_STATEMENT_RULE: Rule<Statement> = Rule {
-    accept: |token| token.kind == TokenKind::RETURN,
-    parse: |lexer, _| {
-        let token = match lexer.next() {
-            Some(token) if token.kind == TokenKind::RETURN => token,
-            option => return Err(Error::MissingReturnKeyword(option)),
-        };
+    consume: |lexer, _| {
+        if let Some(token) = lexer.peek() {
+            if token.kind != TokenKind::RETURN {
+                return Ok(None);
+            }
 
-        let expression = ExpressionParser::parse(lexer, &Precedence::LOWEST)?;
+            let token = match lexer.next() {
+                Some(token) if token.kind == TokenKind::RETURN => token,
+                option => return Err(Error::MissingReturnKeyword(option)),
+            };
 
-        match lexer.next() {
-            Some(token) if token.kind == TokenKind::SEMICOLON => token,
-            option => return Err(Error::MissingSemicolon(option)),
-        };
+            let expression = ExpressionParser::parse(lexer, &Precedence::LOWEST)?;
 
-        Ok(Statement::Return(ReturnStatement { token, expression }))
+            match lexer.next() {
+                Some(token) if token.kind == TokenKind::SEMICOLON => token,
+                option => return Err(Error::MissingSemicolon(option)),
+            };
+
+            return Ok(Some(Statement::Return(ReturnStatement {
+                token,
+                expression,
+            })));
+        }
+
+        Ok(None)
     },
     dependents: None,
 };
 
 const EXPRESSION_STATEMENT_RULE: Rule<Statement> = Rule {
-    accept: |_| true,
-    parse: |lexer, _| {
+    consume: |lexer, _| {
         let token = lexer.peek().unwrap().clone();
-
         let expression = ExpressionParser::parse(lexer, &Precedence::LOWEST)?;
 
         match lexer.next() {
@@ -128,10 +151,10 @@ const EXPRESSION_STATEMENT_RULE: Rule<Statement> = Rule {
             option => return Err(Error::MissingSemicolon(option)),
         };
 
-        return Ok(Statement::Expression(ExpressionStatement {
+        return Ok(Some(Statement::Expression(ExpressionStatement {
             token,
             expression,
-        }));
+        })));
     },
     dependents: None,
 };
