@@ -21,6 +21,7 @@ pub enum TokenKind {
 
     // delimiters
     COMMA,
+    COLON,
     SEMICOLON,
 
     // brackets

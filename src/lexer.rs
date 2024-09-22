@@ -231,6 +231,13 @@ impl Lexer<'_> {
             return self.cursor.capture(TokenKind::COMMA);
         }
 
+        // capture colon_delimiter
+        if let Some(':') = self.cursor.first() {
+            self.cursor.advance();
+
+            return self.cursor.capture(TokenKind::COLON);
+        }
+
         // capture semicolon_delimiter
         if let Some(';') = self.cursor.first() {
             self.cursor.advance();
@@ -496,6 +503,15 @@ mod tests {
         let token = lexer.next().unwrap();
 
         assert_eq!(token.kind, TokenKind::COMMA);
+    }
+
+    #[test]
+    fn capture_colon_delimiter() {
+        let mut lexer = Lexer::new(":");
+
+        let token = lexer.next().unwrap();
+
+        assert_eq!(token.kind, TokenKind::COLON);
     }
 
     #[test]
