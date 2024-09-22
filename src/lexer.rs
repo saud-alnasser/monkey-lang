@@ -1,12 +1,11 @@
-use std::str::Chars;
+use std::{collections::VecDeque, str::Chars};
 
 use crate::{Token, TokenKind};
 
 #[derive(Debug, Clone)]
 pub struct Cursor<'a> {
     chars: Chars<'a>,
-    first: Option<char>,
-    second: Option<char>,
+    peeked: VecDeque<char>,
     line: usize,
     column: usize,
     literal: Option<String>,
@@ -16,8 +15,7 @@ impl<'a> Cursor<'a> {
     pub fn new(input: &'a str) -> Self {
         let mut cursor = Self {
             chars: input.chars(),
-            first: None,
-            second: None,
+            peeked: VecDeque::new(),
             line: 1,
             column: 0,
             literal: None,
@@ -29,7 +27,7 @@ impl<'a> Cursor<'a> {
     }
 
     pub fn advance(&mut self) {
-        if let Some(ch) = self.first {
+        if let Some(ch) = self.peeked.pop_front() {
             match ch {
                 '\n' => {
                     self.line += 1;
@@ -46,24 +44,34 @@ impl<'a> Cursor<'a> {
             }
         }
 
-        self.first = match self.second.take() {
-            Some(c) => Some(c),
-            None => self.chars.next(),
-        };
-
-        self.second = self.chars.next();
+        if self.peeked.is_empty() {
+            if let Some(ch) = self.chars.next() {
+                self.peeked.push_back(ch);
+            }
+        }
     }
 
     pub fn advance_where<F>(&mut self, predicate: F)
     where
         F: Fn(&char) -> bool,
     {
-        while let Some(c) = self.first {
+        while let Some(c) = self.peeked.get(0) {
             match predicate(&c) {
                 true => self.advance(),
                 false => break,
             }
         }
+    }
+
+    pub fn peek(&mut self, i: usize) -> Option<&char> {
+        while self.peeked.len() <= i {
+            match self.chars.next() {
+                Some(ch) => self.peeked.push_back(ch),
+                None => break,
+            }
+        }
+
+        self.peeked.get(i)
     }
 
     pub fn capture(&mut self, kind: TokenKind) -> Option<Token> {
@@ -93,14 +101,6 @@ impl<'a> Cursor<'a> {
 
         None
     }
-
-    pub const fn first(&self) -> Option<char> {
-        self.first
-    }
-
-    pub const fn second(&self) -> Option<char> {
-        self.second
-    }
 }
 
 #[derive(Debug)]
@@ -129,8 +129,8 @@ impl Lexer<'_> {
         self.cursor.capture(TokenKind::WHITESPACE);
 
         // capture eq_operator
-        if let Some('=') = self.cursor.first() {
-            if let Some('=') = self.cursor.second() {
+        if let Some('=') = self.cursor.peek(0) {
+            if let Some('=') = self.cursor.peek(1) {
                 self.cursor.advance();
                 self.cursor.advance();
 
@@ -139,8 +139,8 @@ impl Lexer<'_> {
         }
 
         // capture neq_operator
-        if let Some('!') = self.cursor.first() {
-            if let Some('=') = self.cursor.second() {
+        if let Some('!') = self.cursor.peek(0) {
+            if let Some('=') = self.cursor.peek(1) {
                 self.cursor.advance();
                 self.cursor.advance();
 
@@ -149,8 +149,8 @@ impl Lexer<'_> {
         }
 
         // capture lte_operator
-        if let Some('<') = self.cursor.first() {
-            if let Some('=') = self.cursor.second() {
+        if let Some('<') = self.cursor.peek(0) {
+            if let Some('=') = self.cursor.peek(1) {
                 self.cursor.advance();
                 self.cursor.advance();
 
@@ -159,8 +159,8 @@ impl Lexer<'_> {
         }
 
         // capture gte_operator
-        if let Some('>') = self.cursor.first() {
-            if let Some('=') = self.cursor.second() {
+        if let Some('>') = self.cursor.peek(0) {
+            if let Some('=') = self.cursor.peek(1) {
                 self.cursor.advance();
                 self.cursor.advance();
 
@@ -169,126 +169,126 @@ impl Lexer<'_> {
         }
 
         // capture assignment_operator
-        if let Some('=') = self.cursor.first() {
+        if let Some('=') = self.cursor.peek(0) {
             self.cursor.advance();
 
             return self.cursor.capture(TokenKind::ASSIGN);
         }
 
         // capture plus_operator
-        if let Some('+') = self.cursor.first() {
+        if let Some('+') = self.cursor.peek(0) {
             self.cursor.advance();
 
             return self.cursor.capture(TokenKind::PLUS);
         }
 
         // capture minus_operator
-        if let Some('-') = self.cursor.first() {
+        if let Some('-') = self.cursor.peek(0) {
             self.cursor.advance();
 
             return self.cursor.capture(TokenKind::MINUS);
         }
 
         // capture asterisk_operator
-        if let Some('*') = self.cursor.first() {
+        if let Some('*') = self.cursor.peek(0) {
             self.cursor.advance();
 
             return self.cursor.capture(TokenKind::ASTERISK);
         }
 
         // capture slash_operator
-        if let Some('/') = self.cursor.first() {
+        if let Some('/') = self.cursor.peek(0) {
             self.cursor.advance();
 
             return self.cursor.capture(TokenKind::SLASH);
         }
 
         // capture bang_operator
-        if let Some('!') = self.cursor.first() {
+        if let Some('!') = self.cursor.peek(0) {
             self.cursor.advance();
 
             return self.cursor.capture(TokenKind::BANG);
         }
 
         // capture gt_operator
-        if let Some('>') = self.cursor.first() {
+        if let Some('>') = self.cursor.peek(0) {
             self.cursor.advance();
 
             return self.cursor.capture(TokenKind::GT);
         }
 
         // capture lt_operator
-        if let Some('<') = self.cursor.first() {
+        if let Some('<') = self.cursor.peek(0) {
             self.cursor.advance();
 
             return self.cursor.capture(TokenKind::LT);
         }
 
         // capture comma_delimiter
-        if let Some(',') = self.cursor.first() {
+        if let Some(',') = self.cursor.peek(0) {
             self.cursor.advance();
 
             return self.cursor.capture(TokenKind::COMMA);
         }
 
         // capture colon_delimiter
-        if let Some(':') = self.cursor.first() {
+        if let Some(':') = self.cursor.peek(0) {
             self.cursor.advance();
 
             return self.cursor.capture(TokenKind::COLON);
         }
 
         // capture semicolon_delimiter
-        if let Some(';') = self.cursor.first() {
+        if let Some(';') = self.cursor.peek(0) {
             self.cursor.advance();
 
             return self.cursor.capture(TokenKind::SEMICOLON);
         }
 
         // capture left parentheses
-        if let Some('(') = self.cursor.first() {
+        if let Some('(') = self.cursor.peek(0) {
             self.cursor.advance();
 
             return self.cursor.capture(TokenKind::LPAREN);
         }
 
         // capture right parentheses
-        if let Some(')') = self.cursor.first() {
+        if let Some(')') = self.cursor.peek(0) {
             self.cursor.advance();
 
             return self.cursor.capture(TokenKind::RPAREN);
         }
 
         // capture left braces
-        if let Some('{') = self.cursor.first() {
+        if let Some('{') = self.cursor.peek(0) {
             self.cursor.advance();
 
             return self.cursor.capture(TokenKind::LBRACE);
         }
 
         // capture right braces
-        if let Some('}') = self.cursor.first() {
+        if let Some('}') = self.cursor.peek(0) {
             self.cursor.advance();
 
             return self.cursor.capture(TokenKind::RBRACE);
         }
 
         // capture left brackets
-        if let Some('[') = self.cursor.first() {
+        if let Some('[') = self.cursor.peek(0) {
             self.cursor.advance();
 
             return self.cursor.capture(TokenKind::LBRACKET);
         }
 
         // capture right brackets
-        if let Some(']') = self.cursor.first() {
+        if let Some(']') = self.cursor.peek(0) {
             self.cursor.advance();
 
             return self.cursor.capture(TokenKind::RBRACKET);
         }
 
         // capture string_literal
-        if let Some('"') = self.cursor.first() {
+        if let Some('"') = self.cursor.peek(0) {
             self.cursor.advance();
             self.cursor.advance_where(|c| *c != '"');
             self.cursor.advance();
@@ -342,7 +342,7 @@ impl Lexer<'_> {
 
         self.exhausted = true;
 
-        if self.cursor.first().is_some() {
+        if self.cursor.peek(0).is_some() {
             self.cursor.advance();
 
             return self.cursor.capture(TokenKind::ILLEGAL);
