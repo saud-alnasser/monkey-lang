@@ -1,6 +1,7 @@
 use super::error::Error;
 use crate::DataType;
 
+/// returns the length of the given string or array
 pub const LEN: (&'static str, DataType) = (
     "len",
     DataType::BUILTIN {
@@ -27,6 +28,7 @@ pub const LEN: (&'static str, DataType) = (
     },
 );
 
+/// returns the first element of the given array
 pub const FIRST: (&'static str, DataType) = (
     "first",
     DataType::BUILTIN {
@@ -58,6 +60,7 @@ pub const FIRST: (&'static str, DataType) = (
     },
 );
 
+/// returns the last element of the given array
 pub const LAST: (&'static str, DataType) = (
     "last",
     DataType::BUILTIN {
@@ -89,6 +92,7 @@ pub const LAST: (&'static str, DataType) = (
     },
 );
 
+/// returns all elements except the first of the given array
 pub const REST: (&'static str, DataType) = (
     "rest",
     DataType::BUILTIN {
@@ -120,6 +124,7 @@ pub const REST: (&'static str, DataType) = (
     },
 );
 
+/// appends an element to the end of the given array
 pub const PUSH: (&'static str, DataType) = (
     "push",
     DataType::BUILTIN {
