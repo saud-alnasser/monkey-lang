@@ -1,3 +1,13 @@
+## 0.0.13 (2024-09-23)
+
+### Features
+
+#### add support for colon token (#93)
+
+### Fixes
+
+#### update rust crate thiserror to v1.0.64 (#97)
+
 ## 0.0.12 (2024-09-19)
 
 ### Features
