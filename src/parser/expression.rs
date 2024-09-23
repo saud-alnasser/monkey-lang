@@ -54,7 +54,7 @@ impl ExpressionParser {
     pub fn parse(lexer: &mut Lexer, precedence: &Precedence) -> Result<Expression> {
         let mut left = ExpressionParser::parse_left(lexer)?;
 
-        while let Some(token) = lexer.peek() {
+        while let Some(token) = lexer.peek(0) {
             if precedence >= &Precedence::from(&token.kind) {
                 break;
             }
@@ -92,7 +92,7 @@ const EXPRESSION_RULES: [Rule<Expression>; 9] = [
 
 const GROUPING_EXPRESSION_RULE: Rule<Expression> = Rule {
     consume: |lexer, _| {
-        if let Some(token) = lexer.peek() {
+        if let Some(token) = lexer.peek(0) {
             if token.kind != TokenKind::LPAREN {
                 return Ok(None);
             }
@@ -119,7 +119,7 @@ const GROUPING_EXPRESSION_RULE: Rule<Expression> = Rule {
 
 const IDENTIFIER_EXPRESSION_RULE: Rule<Expression> = Rule {
     consume: |lexer, _| {
-        if let Some(token) = lexer.peek() {
+        if let Some(token) = lexer.peek(0) {
             if token.kind != TokenKind::IDENT {
                 return Ok(None);
             }
@@ -137,7 +137,7 @@ const IDENTIFIER_EXPRESSION_RULE: Rule<Expression> = Rule {
 
 const INTEGER_EXPRESSION_RULE: Rule<Expression> = Rule {
     consume: |lexer, _| {
-        if let Some(token) = lexer.peek() {
+        if let Some(token) = lexer.peek(0) {
             if token.kind != TokenKind::INT {
                 return Ok(None);
             }
@@ -159,7 +159,7 @@ const INTEGER_EXPRESSION_RULE: Rule<Expression> = Rule {
 
 const STRING_EXPRESSION_RULE: Rule<Expression> = Rule {
     consume: |lexer, _| {
-        if let Some(token) = lexer.peek() {
+        if let Some(token) = lexer.peek(0) {
             if token.kind != TokenKind::STRING {
                 return Ok(None);
             }
@@ -177,7 +177,7 @@ const STRING_EXPRESSION_RULE: Rule<Expression> = Rule {
 
 const BOOLEAN_EXPRESSION_RULE: Rule<Expression> = Rule {
     consume: |lexer, _| {
-        if let Some(token) = lexer.peek() {
+        if let Some(token) = lexer.peek(0) {
             if token.kind != TokenKind::TRUE && token.kind != TokenKind::FALSE {
                 return Ok(None);
             }
@@ -198,7 +198,7 @@ const BOOLEAN_EXPRESSION_RULE: Rule<Expression> = Rule {
 
 const ARRAY_EXPRESSION_RULE: Rule<Expression> = Rule {
     consume: |lexer, _| {
-        if let Some(token) = lexer.peek() {
+        if let Some(token) = lexer.peek(0) {
             if token.kind != TokenKind::LBRACKET {
                 return Ok(None);
             }
@@ -210,7 +210,7 @@ const ARRAY_EXPRESSION_RULE: Rule<Expression> = Rule {
 
             let mut elements = Vec::new();
 
-            while let Some(token) = lexer.peek() {
+            while let Some(token) = lexer.peek(0) {
                 if token.kind == TokenKind::RBRACKET {
                     break;
                 }
@@ -219,7 +219,7 @@ const ARRAY_EXPRESSION_RULE: Rule<Expression> = Rule {
 
                 elements.push(expression);
 
-                if let Some(token) = lexer.peek() {
+                if let Some(token) = lexer.peek(0) {
                     if token.kind == TokenKind::COMMA {
                         lexer.next();
                     }
@@ -241,7 +241,7 @@ const ARRAY_EXPRESSION_RULE: Rule<Expression> = Rule {
 
 const PREFIX_EXPRESSION_RULE: Rule<Expression> = Rule {
     consume: |lexer, _| {
-        if let Some(token) = lexer.peek() {
+        if let Some(token) = lexer.peek(0) {
             if token.kind != TokenKind::MINUS && token.kind != TokenKind::BANG {
                 return Ok(None);
             }
@@ -263,7 +263,7 @@ const PREFIX_EXPRESSION_RULE: Rule<Expression> = Rule {
 
 const IF_EXPRESSION_RULE: Rule<Expression> = Rule {
     consume: |lexer, _| {
-        if let Some(token) = lexer.peek() {
+        if let Some(token) = lexer.peek(0) {
             if token.kind != TokenKind::IF {
                 return Ok(None);
             }
@@ -285,7 +285,7 @@ const IF_EXPRESSION_RULE: Rule<Expression> = Rule {
                 }
             };
 
-            let alternative = match lexer.peek() {
+            let alternative = match lexer.peek(0) {
                 Some(token) if token.kind == TokenKind::ELSE => {
                     lexer.next().unwrap();
 
@@ -320,7 +320,7 @@ const IF_EXPRESSION_RULE: Rule<Expression> = Rule {
 
 const FUNCTION_EXPRESSION_RULE: Rule<Expression> = Rule {
     consume: |lexer, _| {
-        if let Some(token) = lexer.peek() {
+        if let Some(token) = lexer.peek(0) {
             if token.kind != TokenKind::FUNCTION {
                 return Ok(None);
             }
@@ -335,7 +335,7 @@ const FUNCTION_EXPRESSION_RULE: Rule<Expression> = Rule {
 
                 let mut parameters = Vec::new();
 
-                while let Some(token) = lexer.peek() {
+                while let Some(token) = lexer.peek(0) {
                     if token.kind == TokenKind::RPAREN {
                         break;
                     }
@@ -349,7 +349,7 @@ const FUNCTION_EXPRESSION_RULE: Rule<Expression> = Rule {
                         option => return Err(Error::MissingIdentifier(option)),
                     }
 
-                    if let Some(token) = lexer.peek() {
+                    if let Some(token) = lexer.peek(0) {
                         if token.kind == TokenKind::COMMA {
                             lexer.next();
                         }
@@ -391,7 +391,7 @@ const FUNCTION_EXPRESSION_RULE: Rule<Expression> = Rule {
 
 const CALL_EXPRESSION_RULE: Rule<Expression> = Rule {
     consume: |lexer, previous| {
-        if let Some(token) = lexer.peek() {
+        if let Some(token) = lexer.peek(0) {
             if previous.is_none() || token.kind != TokenKind::LPAREN {
                 return Ok(None);
             }
@@ -416,7 +416,7 @@ const CALL_EXPRESSION_RULE: Rule<Expression> = Rule {
 
                 let mut arguments = Vec::new();
 
-                while let Some(token) = lexer.peek() {
+                while let Some(token) = lexer.peek(0) {
                     if token.kind == TokenKind::RPAREN {
                         break;
                     }
@@ -425,7 +425,7 @@ const CALL_EXPRESSION_RULE: Rule<Expression> = Rule {
 
                     arguments.push(expression);
 
-                    if let Some(token) = lexer.peek() {
+                    if let Some(token) = lexer.peek(0) {
                         if token.kind == TokenKind::COMMA {
                             lexer.next();
                         }
@@ -454,7 +454,7 @@ const CALL_EXPRESSION_RULE: Rule<Expression> = Rule {
 
 const INDEX_EXPRESSION_RULE: Rule<Expression> = Rule {
     consume: |lexer, previous| {
-        if let Some(token) = lexer.peek() {
+        if let Some(token) = lexer.peek(0) {
             if previous.is_none() || token.kind != TokenKind::LBRACKET {
                 return Ok(None);
             }

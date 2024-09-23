@@ -22,7 +22,7 @@ impl<'a> Parser<'a> {
     pub fn parse(&mut self) -> Result<Program> {
         let mut program = Program::new();
 
-        while let Some(token) = self.lexer.peek() {
+        while let Some(token) = self.lexer.peek(0) {
             if token.kind == TokenKind::EOF {
                 break;
             }

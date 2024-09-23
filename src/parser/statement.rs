@@ -36,7 +36,7 @@ const STATEMENT_RULES: [Rule<Statement>; 4] = [
 
 const BLOCK_STATEMENT_RULE: Rule<Statement> = Rule {
     consume: |lexer, _| {
-        if let Some(token) = lexer.peek() {
+        if let Some(token) = lexer.peek(0) {
             if token.kind != TokenKind::LBRACE {
                 return Ok(None);
             }
@@ -48,7 +48,7 @@ const BLOCK_STATEMENT_RULE: Rule<Statement> = Rule {
 
             let mut statements = Vec::new();
 
-            while let Some(token) = lexer.peek() {
+            while let Some(token) = lexer.peek(0) {
                 if token.kind == TokenKind::RBRACE {
                     break;
                 }
@@ -71,7 +71,7 @@ const BLOCK_STATEMENT_RULE: Rule<Statement> = Rule {
 
 const LET_STATEMENT_RULE: Rule<Statement> = Rule {
     consume: |lexer, _| {
-        if let Some(token) = lexer.peek() {
+        if let Some(token) = lexer.peek(0) {
             if token.kind != TokenKind::LET {
                 return Ok(None);
             }
@@ -113,7 +113,7 @@ const LET_STATEMENT_RULE: Rule<Statement> = Rule {
 
 const RETURN_STATEMENT_RULE: Rule<Statement> = Rule {
     consume: |lexer, _| {
-        if let Some(token) = lexer.peek() {
+        if let Some(token) = lexer.peek(0) {
             if token.kind != TokenKind::RETURN {
                 return Ok(None);
             }
@@ -143,7 +143,7 @@ const RETURN_STATEMENT_RULE: Rule<Statement> = Rule {
 
 const EXPRESSION_STATEMENT_RULE: Rule<Statement> = Rule {
     consume: |lexer, _| {
-        let token = lexer.peek().unwrap().clone();
+        let token = lexer.peek(0).unwrap().clone();
         let expression = ExpressionParser::parse(lexer, &Precedence::LOWEST)?;
 
         match lexer.next() {
