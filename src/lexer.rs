@@ -106,7 +106,7 @@ impl<'a> Cursor<'a> {
 #[derive(Debug)]
 pub struct Lexer<'a> {
     cursor: Cursor<'a>,
-    peeked: Option<Token>,
+    peeked: VecDeque<Token>,
     exhausted: bool,
 }
 
@@ -114,7 +114,7 @@ impl Lexer<'_> {
     pub fn new<'a>(input: &'a str) -> Lexer<'a> {
         Lexer {
             cursor: Cursor::new(input),
-            peeked: None,
+            peeked: VecDeque::new(),
             exhausted: false,
         }
     }
@@ -351,27 +351,27 @@ impl Lexer<'_> {
         self.cursor.capture(TokenKind::EOF)
     }
 
-    pub fn peek(&mut self) -> Option<&Token> {
-        if self.peeked.is_none() {
-            self.peeked = self.capture();
-        }
-
-        self.peeked.as_ref()
-    }
-
     pub fn next(&mut self) -> Option<Token> {
-        match self.peeked.take() {
-            Some(token) => Some(token),
-            None => self.capture(),
+        let peeked = self.peeked.pop_front();
+
+        if self.peeked.is_empty() {
+            if let Some(token) = self.capture() {
+                self.peeked.push_back(token);
+            }
         }
+
+        peeked
     }
-}
 
-impl Iterator for Lexer<'_> {
-    type Item = Token;
+    pub fn peek(&mut self, i: usize) -> Option<&Token> {
+        while self.peeked.len() <= i {
+            match self.capture() {
+                Some(token) => self.peeked.push_back(token),
+                None => break,
+            }
+        }
 
-    fn next(&mut self) -> Option<Self::Item> {
-        self.next()
+        self.peeked.get(i)
     }
 }
 
@@ -383,7 +383,7 @@ mod tests {
     fn capture_whitespace() {
         let mut lexer = Lexer::new("  \n ");
 
-        let token = lexer.next().unwrap();
+        let token = lexer.peek(0).unwrap();
 
         assert_eq!(token.kind, TokenKind::EOF);
     }
@@ -392,7 +392,7 @@ mod tests {
     fn capture_eq_operator() {
         let mut lexer = Lexer::new("==");
 
-        let token = lexer.next().unwrap();
+        let token = lexer.peek(0).unwrap();
 
         assert_eq!(token.kind, TokenKind::EQ);
     }
@@ -401,7 +401,7 @@ mod tests {
     fn capture_not_eq_operator() {
         let mut lexer = Lexer::new("!=");
 
-        let token = lexer.next().unwrap();
+        let token = lexer.peek(0).unwrap();
 
         assert_eq!(token.kind, TokenKind::NEQ);
     }
@@ -410,7 +410,7 @@ mod tests {
     fn capture_lte_operator() {
         let mut lexer = Lexer::new("<=");
 
-        let token = lexer.next().unwrap();
+        let token = lexer.peek(0).unwrap();
 
         assert_eq!(token.kind, TokenKind::LTE);
     }
@@ -419,7 +419,7 @@ mod tests {
     fn capture_gte_operator() {
         let mut lexer = Lexer::new(">=");
 
-        let token = lexer.next().unwrap();
+        let token = lexer.peek(0).unwrap();
 
         assert_eq!(token.kind, TokenKind::GTE);
     }
@@ -428,7 +428,7 @@ mod tests {
     fn capture_assignment_operator() {
         let mut lexer = Lexer::new("=");
 
-        let token = lexer.next().unwrap();
+        let token = lexer.peek(0).unwrap();
 
         assert_eq!(token.kind, TokenKind::ASSIGN);
     }
@@ -437,7 +437,7 @@ mod tests {
     fn capture_plus_operator() {
         let mut lexer = Lexer::new("+");
 
-        let token = lexer.next().unwrap();
+        let token = lexer.peek(0).unwrap();
 
         assert_eq!(token.kind, TokenKind::PLUS);
     }
@@ -446,7 +446,7 @@ mod tests {
     fn capture_minus_operator() {
         let mut lexer = Lexer::new("-");
 
-        let token = lexer.next().unwrap();
+        let token = lexer.peek(0).unwrap();
 
         assert_eq!(token.kind, TokenKind::MINUS);
     }
@@ -455,7 +455,7 @@ mod tests {
     fn capture_asterisk_operator() {
         let mut lexer = Lexer::new("*");
 
-        let token = lexer.next().unwrap();
+        let token = lexer.peek(0).unwrap();
 
         assert_eq!(token.kind, TokenKind::ASTERISK);
     }
@@ -464,7 +464,7 @@ mod tests {
     fn capture_slash_operator() {
         let mut lexer = Lexer::new("/");
 
-        let token = lexer.next().unwrap();
+        let token = lexer.peek(0).unwrap();
 
         assert_eq!(token.kind, TokenKind::SLASH);
     }
@@ -473,7 +473,7 @@ mod tests {
     fn capture_bang_operator() {
         let mut lexer = Lexer::new("!");
 
-        let token = lexer.next().unwrap();
+        let token = lexer.peek(0).unwrap();
 
         assert_eq!(token.kind, TokenKind::BANG);
     }
@@ -482,7 +482,7 @@ mod tests {
     fn capture_gt_operator() {
         let mut lexer = Lexer::new(">");
 
-        let token = lexer.next().unwrap();
+        let token = lexer.peek(0).unwrap();
 
         assert_eq!(token.kind, TokenKind::GT);
     }
@@ -491,7 +491,7 @@ mod tests {
     fn capture_lt_operator() {
         let mut lexer = Lexer::new("<");
 
-        let token = lexer.next().unwrap();
+        let token = lexer.peek(0).unwrap();
 
         assert_eq!(token.kind, TokenKind::LT);
     }
@@ -500,7 +500,7 @@ mod tests {
     fn capture_comma_delimiter() {
         let mut lexer = Lexer::new(",");
 
-        let token = lexer.next().unwrap();
+        let token = lexer.peek(0).unwrap();
 
         assert_eq!(token.kind, TokenKind::COMMA);
     }
@@ -509,7 +509,7 @@ mod tests {
     fn capture_colon_delimiter() {
         let mut lexer = Lexer::new(":");
 
-        let token = lexer.next().unwrap();
+        let token = lexer.peek(0).unwrap();
 
         assert_eq!(token.kind, TokenKind::COLON);
     }
@@ -518,7 +518,7 @@ mod tests {
     fn capture_semicolon_delimiter() {
         let mut lexer = Lexer::new(";");
 
-        let token = lexer.next().unwrap();
+        let token = lexer.peek(0).unwrap();
 
         assert_eq!(token.kind, TokenKind::SEMICOLON);
     }
@@ -527,31 +527,31 @@ mod tests {
     fn capture_parentheses() {
         let mut lexer = Lexer::new("()");
 
-        assert_eq!(lexer.next().unwrap().kind, TokenKind::LPAREN);
-        assert_eq!(lexer.next().unwrap().kind, TokenKind::RPAREN);
+        assert_eq!(lexer.peek(0).unwrap().kind, TokenKind::LPAREN);
+        assert_eq!(lexer.peek(1).unwrap().kind, TokenKind::RPAREN);
     }
 
     #[test]
     fn capture_braces() {
         let mut lexer = Lexer::new("{}");
 
-        assert_eq!(lexer.next().unwrap().kind, TokenKind::LBRACE);
-        assert_eq!(lexer.next().unwrap().kind, TokenKind::RBRACE);
+        assert_eq!(lexer.peek(0).unwrap().kind, TokenKind::LBRACE);
+        assert_eq!(lexer.peek(1).unwrap().kind, TokenKind::RBRACE);
     }
 
     #[test]
     fn capture_brackets() {
         let mut lexer = Lexer::new("[]");
 
-        assert_eq!(lexer.next().unwrap().kind, TokenKind::LBRACKET);
-        assert_eq!(lexer.next().unwrap().kind, TokenKind::RBRACKET);
+        assert_eq!(lexer.peek(0).unwrap().kind, TokenKind::LBRACKET);
+        assert_eq!(lexer.peek(1).unwrap().kind, TokenKind::RBRACKET);
     }
 
     #[test]
     fn capture_string_literal() {
         let mut lexer = Lexer::new("\"hello, world!\"");
 
-        let token = lexer.next().unwrap();
+        let token = lexer.peek(0).unwrap();
 
         assert_eq!(token.kind, TokenKind::STRING);
     }
@@ -560,7 +560,7 @@ mod tests {
     fn capture_integer_literal() {
         let mut lexer = Lexer::new("123");
 
-        let token = lexer.next().unwrap();
+        let token = lexer.peek(0).unwrap();
 
         assert_eq!(token.kind, TokenKind::INT);
     }
@@ -569,7 +569,7 @@ mod tests {
     fn capture_ident() {
         let mut lexer = Lexer::new("abc");
 
-        let token = lexer.next().unwrap();
+        let token = lexer.peek(0).unwrap();
 
         assert_eq!(token.kind, TokenKind::IDENT);
     }
@@ -578,7 +578,7 @@ mod tests {
     fn capture_let_keyword() {
         let mut lexer = Lexer::new("let");
 
-        let token = lexer.next().unwrap();
+        let token = lexer.peek(0).unwrap();
 
         assert_eq!(token.kind, TokenKind::LET);
     }
@@ -587,7 +587,7 @@ mod tests {
     fn capture_fn_keyword() {
         let mut lexer = Lexer::new("fn");
 
-        let token = lexer.next().unwrap();
+        let token = lexer.peek(0).unwrap();
 
         assert_eq!(token.kind, TokenKind::FUNCTION);
     }
@@ -596,7 +596,7 @@ mod tests {
     fn capture_return_keyword() {
         let mut lexer = Lexer::new("return");
 
-        let token = lexer.next().unwrap();
+        let token = lexer.peek(0).unwrap();
 
         assert_eq!(token.kind, TokenKind::RETURN);
     }
@@ -605,7 +605,7 @@ mod tests {
     fn capture_if_keyword() {
         let mut lexer = Lexer::new("if");
 
-        let token = lexer.next().unwrap();
+        let token = lexer.peek(0).unwrap();
 
         assert_eq!(token.kind, TokenKind::IF);
     }
@@ -614,7 +614,7 @@ mod tests {
     fn capture_else_keyword() {
         let mut lexer = Lexer::new("else");
 
-        let token = lexer.next().unwrap();
+        let token = lexer.peek(0).unwrap();
 
         assert_eq!(token.kind, TokenKind::ELSE);
     }
@@ -623,7 +623,7 @@ mod tests {
     fn capture_true_keyword() {
         let mut lexer = Lexer::new("true");
 
-        let token = lexer.next().unwrap();
+        let token = lexer.peek(0).unwrap();
 
         assert_eq!(token.kind, TokenKind::TRUE);
     }
@@ -632,7 +632,7 @@ mod tests {
     fn capture_false_keyword() {
         let mut lexer = Lexer::new("false");
 
-        let token = lexer.next().unwrap();
+        let token = lexer.peek(0).unwrap();
 
         assert_eq!(token.kind, TokenKind::FALSE);
     }
@@ -641,7 +641,7 @@ mod tests {
     fn capture_illegal_literal() {
         let mut lexer = Lexer::new("$");
 
-        let token = lexer.next().unwrap();
+        let token = lexer.peek(0).unwrap();
 
         assert_eq!(token.kind, TokenKind::ILLEGAL);
     }
@@ -650,7 +650,7 @@ mod tests {
     fn capture_eof() {
         let mut lexer = Lexer::new("");
 
-        let token = lexer.next().unwrap();
+        let token = lexer.peek(0).unwrap();
 
         assert_eq!(token.kind, TokenKind::EOF);
     }
