@@ -16,7 +16,7 @@ pub enum Error {
     MissingReturnKeyword(Option<Token>),
     MissingSemicolon(Option<Token>),
     MissingIdentifier(Option<Token>),
-    MissingBlockStatement(Option<Token>),
+    MissingBlockExpression(Option<Token>),
     UnexpectedToken(Token),
     IllegalToken(Token),
 }
@@ -113,13 +113,13 @@ impl Display for Error {
                 ),
                 None => write!(f, "expected identifier, got EOF"),
             },
-            Error::MissingBlockStatement(token) => match token {
+            Error::MissingBlockExpression(token) => match token {
                 Some(token) => write!(
                     f,
-                    "expected block statement, got {} at {}:{}",
+                    "expected block expression, got {} at {}:{}",
                     token.literal, token.line, token.column
                 ),
-                None => write!(f, "expected block statement, got EOF"),
+                None => write!(f, "expected block expression, got EOF"),
             },
             Error::UnexpectedToken(token) => write!(
                 f,

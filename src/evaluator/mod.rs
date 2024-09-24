@@ -5,23 +5,37 @@ use std::{cell::RefCell, rc::Rc};
 
 pub use self::datatype::*;
 pub use self::error::*;
-use crate::{Environment, Expression, Program, Statement, TokenKind};
+use crate::Statement;
+use crate::{Environment, Expression, Program, TokenKind};
 
 pub struct Evaluator;
 
 impl Evaluator {
     fn eval_expression(expression: Expression, env: Rc<RefCell<Environment>>) -> Result<DataType> {
         match expression {
-            Expression::INT(expression) => {
+            Expression::Block(block) => {
+                let mut result = DataType::UNDEFINED;
+
+                for statement in block.statements {
+                    result = Evaluator::eval_statement(statement, Rc::clone(&env))?;
+
+                    if let DataType::RETURN(_) = result {
+                        return Ok(result);
+                    }
+                }
+
+                Ok(result)
+            }
+            Expression::Int(expression) => {
                 return Ok(DataType::INT(expression.value));
             }
-            Expression::STRING(expression) => {
+            Expression::String(expression) => {
                 return Ok(DataType::STRING(expression.value));
             }
-            Expression::BOOLEAN(expression) => {
+            Expression::Boolean(expression) => {
                 return Ok(DataType::BOOLEAN(expression.value));
             }
-            Expression::ARRAY(expression) => {
+            Expression::Array(expression) => {
                 let elements = expression
                     .elements
                     .iter()
@@ -33,7 +47,7 @@ impl Evaluator {
 
                 return Ok(DataType::ARRAY(elements));
             }
-            Expression::INDEX(expression) => {
+            Expression::Index(expression) => {
                 let left = Evaluator::eval_expression(*expression.left, Rc::clone(&env))?;
                 let index = Evaluator::eval_expression(*expression.index, Rc::clone(&env))?;
 
@@ -47,7 +61,7 @@ impl Evaluator {
 
                 Err(Error::IndexTypeMismatch(index, expression.token))
             }
-            Expression::PREFIX(expression) => {
+            Expression::Prefix(expression) => {
                 let right = Evaluator::eval_expression(*expression.right, Rc::clone(&env))?;
 
                 if expression.operator.kind == TokenKind::BANG {
@@ -68,7 +82,7 @@ impl Evaluator {
 
                 Err(Error::UnknownOperator(expression.operator))
             }
-            Expression::INFIX(expression) => {
+            Expression::Infix(expression) => {
                 let left = Evaluator::eval_expression(*expression.left, Rc::clone(&env))?;
                 let right = Evaluator::eval_expression(*expression.right, Rc::clone(&env))?;
                 let operator = expression.operator;
@@ -107,7 +121,7 @@ impl Evaluator {
 
                 Err(Error::TypeMismatch(left, operator, right))
             }
-            Expression::IF(expression) => {
+            Expression::If(expression) => {
                 let condition =
                     match Evaluator::eval_expression(*expression.condition, Rc::clone(&env))? {
                         DataType::BOOLEAN(value) => value,
@@ -116,28 +130,29 @@ impl Evaluator {
                     };
 
                 match condition {
-                    true => Ok(Evaluator::eval_statement(
-                        Statement::Block(expression.consequence),
+                    true => Ok(Evaluator::eval_expression(
+                        Expression::Block(expression.consequence),
                         Rc::clone(&env),
                     )?),
                     false => match expression.alternative {
-                        Some(statement) => {
-                            Ok(Evaluator::eval_statement(Statement::Block(statement), env)?)
-                        }
+                        Some(statement) => Ok(Evaluator::eval_expression(
+                            Expression::Block(statement),
+                            env,
+                        )?),
                         None => Ok(DataType::UNDEFINED),
                     },
                 }
             }
-            Expression::IDENT(expression) => match env.borrow().get(&expression.value) {
+            Expression::Ident(expression) => match env.borrow().get(&expression.value) {
                 Some(value) => Ok(value.clone()),
                 None => Err(Error::UndefinedVariable(DataType::IDENT(expression.value))),
             },
-            Expression::FUNCTION(expression) => Ok(DataType::FUNCTION {
+            Expression::Function(expression) => Ok(DataType::FUNCTION {
                 parameters: expression.parameters,
                 body: expression.body,
                 env: Rc::new(RefCell::new(Environment::new(Some(env)))),
             }),
-            Expression::CALL(expression) => {
+            Expression::Call(expression) => {
                 let function = Evaluator::eval_expression(*expression.function, Rc::clone(&env))?;
 
                 let arguments = expression
@@ -163,7 +178,7 @@ impl Evaluator {
                             .set(&parameter.value, argument.clone());
                     }
 
-                    return Evaluator::eval_statement(Statement::Block(body), extended_env);
+                    return Evaluator::eval_expression(Expression::Block(body), extended_env);
                 }
 
                 if let DataType::BUILTIN { func } = function {
@@ -177,19 +192,6 @@ impl Evaluator {
 
     fn eval_statement(statement: Statement, env: Rc<RefCell<Environment>>) -> Result<DataType> {
         match statement {
-            Statement::Block(block) => {
-                let mut result = DataType::UNDEFINED;
-
-                for statement in block.statements {
-                    result = Evaluator::eval_statement(statement, Rc::clone(&env))?;
-
-                    if let DataType::RETURN(_) = result {
-                        return Ok(result);
-                    }
-                }
-
-                Ok(result)
-            }
             Statement::Let(statement) => {
                 let value = Evaluator::eval_expression(statement.expression, Rc::clone(&env))?;
                 env.borrow_mut().set(&statement.identifier, value);
