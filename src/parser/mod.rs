@@ -1,13 +1,11 @@
 pub mod error;
-mod expression;
-mod rule;
-mod statement;
 
-use self::{
-    error::{Error, Result},
-    statement::StatementParser,
+use crate::{
+    parser::error::*, ArrayExpression, BlockExpression, BooleanExpression, CallExpression,
+    Expression, ExpressionStatement, FunctionExpression, IdentExpression, IfExpression,
+    IndexExpression, InfixExpression, IntExpression, LetStatement, Lexer, PrefixExpression,
+    Program, ReturnStatement, Statement, StringExpression, TokenKind,
 };
-use crate::{Lexer, Program, TokenKind};
 
 #[derive(Debug)]
 pub struct Parser<'a> {
@@ -31,12 +29,699 @@ impl<'a> Parser<'a> {
                 return Err(Error::IllegalToken(token.clone()));
             }
 
-            program
-                .statements
-                .push(StatementParser::parse(&mut self.lexer)?);
+            program.statements.push(self.parse_statement()?);
         }
 
         Ok(program)
+    }
+
+    fn parse_statement(self: &mut Parser<'a>) -> Result<Statement> {
+        if let Some(expression) = self.parse_let_statement()? {
+            match self.lexer.next() {
+                Some(token) if token.kind == TokenKind::SEMICOLON => token,
+                option => return Err(Error::MissingSemicolon(option)),
+            };
+
+            return Ok(expression);
+        }
+
+        if let Some(expression) = self.parse_return_statement()? {
+            match self.lexer.next() {
+                Some(token) if token.kind == TokenKind::SEMICOLON => token,
+                option => return Err(Error::MissingSemicolon(option)),
+            };
+
+            return Ok(expression);
+        }
+
+        let token = self.lexer.peek(0).unwrap().clone();
+
+        let expression = self.parse_expression(&Precedence::LOWEST)?;
+
+        match self.lexer.next() {
+            Some(token) if token.kind == TokenKind::SEMICOLON => token,
+            option => return Err(Error::MissingSemicolon(option)),
+        };
+
+        return Ok(Statement::Expression(ExpressionStatement {
+            token,
+            expression,
+        }));
+    }
+
+    fn parse_let_statement(self: &mut Parser<'a>) -> Result<Option<Statement>> {
+        if let Some(token) = self.lexer.peek(0) {
+            if token.kind != TokenKind::LET {
+                return Ok(None);
+            }
+
+            let token = match self.lexer.next() {
+                Some(token) if token.kind == TokenKind::LET => token,
+                option => return Err(Error::MissingLetKeyword(option)),
+            };
+
+            let identifier = match self.lexer.next() {
+                Some(token) if token.kind == TokenKind::IDENT => token.literal,
+                option => return Err(Error::MissingIdentifier(option)),
+            };
+
+            match self.lexer.next() {
+                Some(token) if token.kind == TokenKind::ASSIGN => token,
+                option => return Err(Error::MissingAssignmentOperator(option)),
+            };
+
+            let expression = self.parse_expression(&Precedence::LOWEST)?;
+
+            return Ok(Some(Statement::Let(LetStatement {
+                token,
+                identifier,
+                expression,
+            })));
+        }
+
+        Ok(None)
+    }
+
+    fn parse_return_statement(self: &mut Parser<'a>) -> Result<Option<Statement>> {
+        if let Some(token) = self.lexer.peek(0) {
+            if token.kind != TokenKind::RETURN {
+                return Ok(None);
+            }
+
+            let token = match self.lexer.next() {
+                Some(token) if token.kind == TokenKind::RETURN => token,
+                option => return Err(Error::MissingReturnKeyword(option)),
+            };
+
+            let expression = self.parse_expression(&Precedence::LOWEST)?;
+
+            return Ok(Some(Statement::Return(ReturnStatement {
+                token,
+                expression,
+            })));
+        }
+
+        Ok(None)
+    }
+
+    fn parse_expression(self: &mut Parser<'a>, precedence: &Precedence) -> Result<Expression> {
+        let mut left = self.parse_expression_left()?;
+
+        while let Some(token) = self.lexer.peek(0) {
+            if precedence >= &Precedence::from(&token.kind) {
+                break;
+            }
+
+            let operator = match self.lexer.next() {
+                Some(token) => token,
+                None => return Err(Error::MissingToken),
+            };
+
+            let right = self.parse_expression(&Precedence::from(&operator.kind))?;
+
+            left = Expression::Infix(InfixExpression {
+                left: Box::new(left),
+                operator,
+                right: Box::new(right),
+            });
+        }
+
+        Ok(left)
+    }
+
+    fn parse_expression_left(self: &mut Parser<'a>) -> Result<Expression> {
+        if let Some(expression) = self.parse_block_expression()? {
+            return Ok(expression);
+        }
+
+        if let Some(expression) = self.prase_grouping_expression()? {
+            return Ok(expression);
+        }
+
+        if let Some(ident_expression) = self.parse_ident_expression()? {
+            if let Some(expression) = self.parse_call_expression(&ident_expression)? {
+                return Ok(expression);
+            }
+
+            if let Some(expression) = self.parse_index_expression(&ident_expression)? {
+                return Ok(expression);
+            }
+
+            return Ok(ident_expression);
+        }
+
+        if let Some(expression) = self.parse_integer_expression()? {
+            return Ok(expression);
+        }
+
+        if let Some(expression) = self.parse_string_expression()? {
+            return Ok(expression);
+        }
+
+        if let Some(expression) = self.parse_boolean_expression()? {
+            return Ok(expression);
+        }
+
+        if let Some(array_expression) = self.parse_array_expression()? {
+            if let Some(expression) = self.parse_index_expression(&array_expression)? {
+                return Ok(expression);
+            }
+
+            return Ok(array_expression);
+        }
+
+        if let Some(expression) = self.parse_prefix_expression()? {
+            return Ok(expression);
+        }
+
+        if let Some(expression) = self.parse_if_expression()? {
+            return Ok(expression);
+        }
+
+        if let Some(function_expression) = self.parse_function_expression()? {
+            if let Some(expression) = self.parse_call_expression(&function_expression)? {
+                return Ok(expression);
+            }
+
+            return Ok(function_expression);
+        }
+
+        match self.lexer.next() {
+            Some(token) => Err(Error::UnexpectedToken(token)),
+            None => Err(Error::MissingToken),
+        }
+    }
+
+    fn parse_block_expression(self: &mut Parser<'a>) -> Result<Option<Expression>> {
+        if let Some(token) = self.lexer.peek(0) {
+            if token.kind != TokenKind::LBRACE {
+                return Ok(None);
+            }
+
+            let token = match self.lexer.next() {
+                Some(token) if token.kind == TokenKind::LBRACE => token,
+                option => return Err(Error::MissingOpeningBrace(option)),
+            };
+
+            let mut expressions = Vec::new();
+
+            while let Some(token) = self.lexer.peek(0) {
+                if token.kind == TokenKind::RBRACE {
+                    break;
+                }
+
+                expressions.push(self.parse_statement()?);
+            }
+
+            match self.lexer.next() {
+                Some(token) if token.kind == TokenKind::RBRACE => token,
+                option => return Err(Error::MissingClosingBrace(option)),
+            };
+
+            return Ok(Some(Expression::Block(BlockExpression {
+                token,
+                statements: expressions,
+            })));
+        }
+
+        Ok(None)
+    }
+
+    fn prase_grouping_expression(self: &mut Parser<'a>) -> Result<Option<Expression>> {
+        if let Some(token) = self.lexer.peek(0) {
+            if token.kind != TokenKind::LPAREN {
+                return Ok(None);
+            }
+
+            match self.lexer.next() {
+                Some(token) if token.kind == TokenKind::LPAREN => token,
+                option => return Err(Error::MissingOpeningParenthesis(option)),
+            };
+
+            let expression = self.parse_expression(&Precedence::LOWEST)?;
+
+            match self.lexer.next() {
+                Some(token) if token.kind == TokenKind::RPAREN => token,
+                option => return Err(Error::MissingClosingParenthesis(option)),
+            };
+
+            return Ok(Some(expression));
+        }
+
+        Ok(None)
+    }
+
+    fn parse_ident_expression(self: &mut Parser<'a>) -> Result<Option<Expression>> {
+        if let Some(token) = self.lexer.peek(0) {
+            if token.kind != TokenKind::IDENT {
+                return Ok(None);
+            }
+
+            let token = self.lexer.next().unwrap();
+            let value = token.literal.clone();
+
+            return Ok(Some(Expression::Ident(IdentExpression { token, value })));
+        }
+
+        Ok(None)
+    }
+
+    fn parse_integer_expression(self: &mut Parser<'a>) -> Result<Option<Expression>> {
+        if let Some(token) = self.lexer.peek(0) {
+            if token.kind != TokenKind::INT {
+                return Ok(None);
+            }
+
+            let token = self.lexer.next().unwrap();
+
+            let value = match token.literal.parse::<i64>() {
+                Ok(value) => value,
+                Err(_) => return Err(Error::IllegalToken(token)),
+            };
+
+            return Ok(Some(Expression::Int(IntExpression { token, value })));
+        }
+
+        Ok(None)
+    }
+
+    fn parse_string_expression(self: &mut Parser<'a>) -> Result<Option<Expression>> {
+        if let Some(token) = self.lexer.peek(0) {
+            if token.kind != TokenKind::STRING {
+                return Ok(None);
+            }
+
+            let token = self.lexer.next().unwrap();
+            let value = token.literal[1..token.literal.len() - 1].into();
+
+            return Ok(Some(Expression::String(StringExpression { token, value })));
+        }
+
+        Ok(None)
+    }
+
+    fn parse_boolean_expression(self: &mut Parser<'a>) -> Result<Option<Expression>> {
+        if let Some(token) = self.lexer.peek(0) {
+            if token.kind != TokenKind::TRUE && token.kind != TokenKind::FALSE {
+                return Ok(None);
+            }
+
+            let token = self.lexer.next().unwrap();
+            let value = token.kind == TokenKind::TRUE;
+
+            return Ok(Some(Expression::Boolean(BooleanExpression {
+                token,
+                value,
+            })));
+        }
+
+        Ok(None)
+    }
+
+    fn parse_array_expression(self: &mut Parser<'a>) -> Result<Option<Expression>> {
+        if let Some(token) = self.lexer.peek(0) {
+            if token.kind != TokenKind::LBRACKET {
+                return Ok(None);
+            }
+
+            let token = match self.lexer.next() {
+                Some(token) if token.kind == TokenKind::LBRACKET => token,
+                option => return Err(Error::MissingOpeningBracket(option)),
+            };
+
+            let mut elements = Vec::new();
+
+            while let Some(token) = self.lexer.peek(0) {
+                if token.kind == TokenKind::RBRACKET {
+                    break;
+                }
+
+                let expression = self.parse_expression(&Precedence::LOWEST)?;
+
+                elements.push(expression);
+
+                if let Some(token) = self.lexer.peek(0) {
+                    if token.kind == TokenKind::COMMA {
+                        self.lexer.next();
+                    }
+                }
+            }
+
+            match self.lexer.next() {
+                Some(token) if token.kind == TokenKind::RBRACKET => token,
+                option => return Err(Error::MissingClosingBracket(option)),
+            };
+
+            return Ok(Some(Expression::Array(ArrayExpression { token, elements })));
+        }
+
+        Ok(None)
+    }
+
+    fn parse_prefix_expression(self: &mut Parser<'a>) -> Result<Option<Expression>> {
+        if let Some(token) = self.lexer.peek(0) {
+            if token.kind != TokenKind::MINUS && token.kind != TokenKind::BANG {
+                return Ok(None);
+            }
+
+            let operator = self.lexer.next().unwrap();
+
+            let right = Box::new(self.parse_expression(&Precedence::PREFIX)?);
+
+            return Ok(Some(Expression::Prefix(PrefixExpression {
+                operator,
+                right,
+            })));
+        }
+
+        Ok(None)
+    }
+
+    fn parse_if_expression(self: &mut Parser<'a>) -> Result<Option<Expression>> {
+        if let Some(token) = self.lexer.peek(0) {
+            if token.kind != TokenKind::IF {
+                return Ok(None);
+            }
+
+            let token = self.lexer.next().unwrap();
+
+            let condition = Box::new(self.parse_expression(&Precedence::LOWEST)?);
+
+            let consequence = match self.parse_expression(&Precedence::LOWEST)? {
+                Expression::Block(expression) => expression,
+                Expression::Ident(expression) => {
+                    return Err(Error::MissingBlockExpression(Some(expression.token)))
+                }
+                Expression::Int(expression) => {
+                    return Err(Error::MissingBlockExpression(Some(expression.token)))
+                }
+                Expression::String(expression) => {
+                    return Err(Error::MissingBlockExpression(Some(expression.token)))
+                }
+                Expression::Boolean(expression) => {
+                    return Err(Error::MissingBlockExpression(Some(expression.token)))
+                }
+                Expression::Array(expression) => {
+                    return Err(Error::MissingBlockExpression(Some(expression.token)))
+                }
+                Expression::If(expression) => {
+                    return Err(Error::MissingBlockExpression(Some(expression.token)))
+                }
+                Expression::Function(expression) => {
+                    return Err(Error::MissingBlockExpression(Some(expression.token)))
+                }
+                Expression::Call(expression) => {
+                    return Err(Error::MissingBlockExpression(Some(expression.token)))
+                }
+                Expression::Index(expression) => {
+                    return Err(Error::MissingBlockExpression(Some(expression.token)))
+                }
+                Expression::Prefix(expression) => {
+                    return Err(Error::MissingBlockExpression(Some(expression.operator)))
+                }
+                Expression::Infix(expression) => {
+                    return Err(Error::MissingBlockExpression(Some(expression.operator)))
+                }
+            };
+
+            let alternative = match self.lexer.peek(0) {
+                Some(token) if token.kind == TokenKind::ELSE => {
+                    self.lexer.next().unwrap();
+
+                    Some(match self.parse_expression(&Precedence::LOWEST)? {
+                        Expression::Block(expression) => expression,
+                        Expression::Ident(expression) => {
+                            return Err(Error::MissingBlockExpression(Some(expression.token)))
+                        }
+                        Expression::Int(expression) => {
+                            return Err(Error::MissingBlockExpression(Some(expression.token)))
+                        }
+                        Expression::String(expression) => {
+                            return Err(Error::MissingBlockExpression(Some(expression.token)))
+                        }
+                        Expression::Boolean(expression) => {
+                            return Err(Error::MissingBlockExpression(Some(expression.token)))
+                        }
+                        Expression::Array(expression) => {
+                            return Err(Error::MissingBlockExpression(Some(expression.token)))
+                        }
+                        Expression::If(expression) => {
+                            return Err(Error::MissingBlockExpression(Some(expression.token)))
+                        }
+                        Expression::Function(expression) => {
+                            return Err(Error::MissingBlockExpression(Some(expression.token)))
+                        }
+                        Expression::Call(expression) => {
+                            return Err(Error::MissingBlockExpression(Some(expression.token)))
+                        }
+                        Expression::Index(expression) => {
+                            return Err(Error::MissingBlockExpression(Some(expression.token)))
+                        }
+                        Expression::Prefix(expression) => {
+                            return Err(Error::MissingBlockExpression(Some(expression.operator)))
+                        }
+                        Expression::Infix(expression) => {
+                            return Err(Error::MissingBlockExpression(Some(expression.operator)))
+                        }
+                    })
+                }
+                _ => None,
+            };
+
+            return Ok(Some(Expression::If(IfExpression {
+                token,
+                condition,
+                consequence,
+                alternative,
+            })));
+        }
+
+        Ok(None)
+    }
+
+    fn parse_function_expression(self: &mut Parser<'a>) -> Result<Option<Expression>> {
+        if let Some(token) = self.lexer.peek(0) {
+            if token.kind != TokenKind::FUNCTION {
+                return Ok(None);
+            }
+
+            let token = self.lexer.next().unwrap();
+
+            let parameters = {
+                match self.lexer.next() {
+                    Some(token) if token.kind == TokenKind::LPAREN => token,
+                    option => return Err(Error::MissingOpeningParenthesis(option)),
+                };
+
+                let mut parameters = Vec::new();
+
+                while let Some(token) = self.lexer.peek(0) {
+                    if token.kind == TokenKind::RPAREN {
+                        break;
+                    }
+
+                    match self.lexer.next() {
+                        Some(token) if token.kind == TokenKind::IDENT => {
+                            let value = token.literal.clone();
+
+                            parameters.push(IdentExpression { token, value });
+                        }
+                        option => return Err(Error::MissingIdentifier(option)),
+                    }
+
+                    if let Some(token) = self.lexer.peek(0) {
+                        if token.kind == TokenKind::COMMA {
+                            self.lexer.next();
+                        }
+                    }
+                }
+
+                match self.lexer.next() {
+                    Some(token) if token.kind == TokenKind::RPAREN => token,
+                    option => return Err(Error::MissingClosingParenthesis(option)),
+                };
+
+                parameters
+            };
+
+            let body = match self.parse_expression(&Precedence::LOWEST)? {
+                Expression::Block(expression) => expression,
+                Expression::Ident(expression) => {
+                    return Err(Error::MissingBlockExpression(Some(expression.token)))
+                }
+                Expression::Int(expression) => {
+                    return Err(Error::MissingBlockExpression(Some(expression.token)))
+                }
+                Expression::String(expression) => {
+                    return Err(Error::MissingBlockExpression(Some(expression.token)))
+                }
+                Expression::Boolean(expression) => {
+                    return Err(Error::MissingBlockExpression(Some(expression.token)))
+                }
+                Expression::Array(expression) => {
+                    return Err(Error::MissingBlockExpression(Some(expression.token)))
+                }
+                Expression::If(expression) => {
+                    return Err(Error::MissingBlockExpression(Some(expression.token)))
+                }
+                Expression::Function(expression) => {
+                    return Err(Error::MissingBlockExpression(Some(expression.token)))
+                }
+                Expression::Call(expression) => {
+                    return Err(Error::MissingBlockExpression(Some(expression.token)))
+                }
+                Expression::Index(expression) => {
+                    return Err(Error::MissingBlockExpression(Some(expression.token)))
+                }
+                Expression::Prefix(expression) => {
+                    return Err(Error::MissingBlockExpression(Some(expression.operator)))
+                }
+                Expression::Infix(expression) => {
+                    return Err(Error::MissingBlockExpression(Some(expression.operator)))
+                }
+            };
+
+            return Ok(Some(Expression::Function(FunctionExpression {
+                token,
+                parameters,
+                body,
+            })));
+        }
+
+        Ok(None)
+    }
+
+    fn parse_call_expression(
+        self: &mut Parser<'a>,
+        callable: &Expression,
+    ) -> Result<Option<Expression>> {
+        if let Some(token) = self.lexer.peek(0) {
+            if token.kind != TokenKind::LPAREN {
+                return Ok(None);
+            }
+
+            let token = match &callable {
+                Expression::Ident(ident) => ident.token.clone(),
+                Expression::Function(func) => func.token.clone(),
+                _ => unreachable!(),
+            };
+
+            let function = match &callable {
+                Expression::Ident(ident) => Box::new(Expression::Ident(ident.clone())),
+                Expression::Function(func) => Box::new(Expression::Function(func.clone())),
+                _ => unreachable!(),
+            };
+
+            let arguments = {
+                match self.lexer.next() {
+                    Some(token) if token.kind == TokenKind::LPAREN => token,
+                    option => return Err(Error::MissingOpeningParenthesis(option)),
+                };
+
+                let mut arguments = Vec::new();
+
+                while let Some(token) = self.lexer.peek(0) {
+                    if token.kind == TokenKind::RPAREN {
+                        break;
+                    }
+
+                    let expression = self.parse_expression(&Precedence::LOWEST)?;
+
+                    arguments.push(expression);
+
+                    if let Some(token) = self.lexer.peek(0) {
+                        if token.kind == TokenKind::COMMA {
+                            self.lexer.next();
+                        }
+                    }
+                }
+
+                match self.lexer.next() {
+                    Some(token) if token.kind == TokenKind::RPAREN => token,
+                    option => return Err(Error::MissingClosingParenthesis(option)),
+                };
+
+                arguments
+            };
+
+            return Ok(Some(Expression::Call(CallExpression {
+                token,
+                function,
+                arguments,
+            })));
+        }
+
+        Ok(None)
+    }
+
+    fn parse_index_expression(
+        self: &mut Parser<'a>,
+        indexable: &Expression,
+    ) -> Result<Option<Expression>> {
+        if let Some(token) = self.lexer.peek(0) {
+            if token.kind != TokenKind::LBRACKET {
+                return Ok(None);
+            }
+
+            let token = match indexable {
+                Expression::Ident(ident) => ident.token.clone(),
+                Expression::Array(array) => array.token.clone(),
+                _ => unreachable!(),
+            };
+
+            let left = match indexable {
+                Expression::Ident(ident) => Box::new(Expression::Ident(ident.clone())),
+                Expression::Array(array) => Box::new(Expression::Array(array.clone())),
+                _ => unreachable!(),
+            };
+
+            match self.lexer.next() {
+                Some(token) if token.kind == TokenKind::LBRACKET => token,
+                option => return Err(Error::MissingOpeningBracket(option)),
+            };
+
+            let index = Box::new(self.parse_expression(&Precedence::LOWEST)?);
+
+            match self.lexer.next() {
+                Some(token) if token.kind == TokenKind::RBRACKET => token,
+                option => return Err(Error::MissingClosingBracket(option)),
+            };
+
+            return Ok(Some(Expression::Index(IndexExpression {
+                token,
+                left,
+                index,
+            })));
+        }
+
+        Ok(None)
+    }
+}
+
+#[derive(Debug, PartialEq, PartialOrd, Eq, Ord, Clone)]
+#[allow(dead_code)]
+pub enum Precedence {
+    LOWEST = 1,
+    EQUIVALENCE = 2, // equivalence: == or !=
+    COMPARISON = 3,  // comparison: > or < or >= or <=
+    SUM = 4,         // sum: + or -
+    PRODUCT = 5,     // product: * or /
+    PREFIX = 6,      // prefix: -x or !x
+    CALL = 7,        // call: func(x)
+    STATEMENT = 8,   // statement: let x = 5;
+}
+
+impl From<&TokenKind> for Precedence {
+    fn from(kind: &TokenKind) -> Self {
+        match kind {
+            TokenKind::EQ | TokenKind::NEQ => Precedence::EQUIVALENCE,
+            TokenKind::LT | TokenKind::GT | TokenKind::LTE | TokenKind::GTE => {
+                Precedence::COMPARISON
+            }
+            TokenKind::PLUS | TokenKind::MINUS => Precedence::SUM,
+            TokenKind::ASTERISK | TokenKind::SLASH => Precedence::PRODUCT,
+            _ => Precedence::LOWEST,
+        }
     }
 }
 
@@ -45,7 +730,7 @@ mod tests {
     use crate::{
         ArrayExpression, BooleanExpression, Expression, ExpressionStatement, FunctionExpression,
         IdentExpression, IfExpression, InfixExpression, IntExpression, LetStatement, Lexer,
-        PrefixExpression, ReturnStatement, Statement, StringExpression, TokenKind,
+        PrefixExpression, ReturnStatement, StringExpression, TokenKind,
     };
 
     use super::*;
@@ -74,9 +759,9 @@ mod tests {
                 }) => {
                     assert_eq!(**identifier, **expected_identifier);
 
-                    match expression {
-                        Expression::INT(IntExpression { value, .. }) => {
-                            assert_eq!(value, expected_value);
+                    match *expression {
+                        Expression::Int(IntExpression { value, .. }) => {
+                            assert_eq!(value, *expected_value);
                         }
                         _ => unreachable!(),
                     }
@@ -103,9 +788,9 @@ mod tests {
             let statement = &program.statements[i];
 
             match statement {
-                Statement::Return(ReturnStatement { expression, .. }) => match expression {
-                    Expression::INT(IntExpression { value, .. }) => {
-                        assert_eq!(value, expected);
+                Statement::Return(ReturnStatement { expression, .. }) => match *expression {
+                    Expression::Int(IntExpression { value, .. }) => {
+                        assert_eq!(value, *expected);
                     }
                     _ => unreachable!(),
                 },
@@ -129,7 +814,7 @@ mod tests {
 
         match statement {
             Statement::Expression(ExpressionStatement { expression, .. }) => match expression {
-                Expression::IDENT(IdentExpression { value, .. }) => {
+                Expression::Ident(IdentExpression { value, .. }) => {
                     assert_eq!(&**value, "foobar");
                 }
                 _ => unreachable!(),
@@ -153,7 +838,7 @@ mod tests {
 
         match statement {
             Statement::Expression(ExpressionStatement { expression, .. }) => match expression {
-                Expression::INT(IntExpression { value, .. }) => {
+                Expression::Int(IntExpression { value, .. }) => {
                     assert_eq!(*value, 5);
                 }
                 _ => unreachable!(),
@@ -177,7 +862,7 @@ mod tests {
 
         match statement {
             Statement::Expression(ExpressionStatement { expression, .. }) => match expression {
-                Expression::STRING(StringExpression { value, .. }) => {
+                Expression::String(StringExpression { value, .. }) => {
                     assert_eq!(&**value, "hello world");
                 }
                 _ => unreachable!(),
@@ -204,7 +889,7 @@ mod tests {
 
             match statement {
                 Statement::Expression(ExpressionStatement { expression, .. }) => match expression {
-                    Expression::BOOLEAN(BooleanExpression { value, .. }) => {
+                    Expression::Boolean(BooleanExpression { value, .. }) => {
                         assert_eq!(*value, *expected);
                     }
                     _ => unreachable!(),
@@ -228,23 +913,23 @@ mod tests {
 
         match statement {
             Statement::Expression(ExpressionStatement { expression, .. }) => match expression {
-                Expression::ARRAY(ArrayExpression { elements, .. }) => {
+                Expression::Array(ArrayExpression { elements, .. }) => {
                     assert_eq!(elements.len(), 3);
 
-                    if let Expression::INT(IntExpression { value, .. }) = &elements[0] {
+                    if let Expression::Int(IntExpression { value, .. }) = &elements[0] {
                         assert_eq!(*value, 1);
                     } else {
                         panic!("expected integer expression with value 1 in array[0]");
                     }
 
-                    if let Expression::INFIX(InfixExpression { left, right, .. }) = &elements[1] {
-                        if let Expression::INT(IntExpression { value, .. }) = &**left {
+                    if let Expression::Infix(InfixExpression { left, right, .. }) = &elements[1] {
+                        if let Expression::Int(IntExpression { value, .. }) = &**left {
                             assert_eq!(*value, 2);
                         } else {
                             panic!("expected integer expression with value 2 in array[1]");
                         }
 
-                        if let Expression::INT(IntExpression { value, .. }) = &**right {
+                        if let Expression::Int(IntExpression { value, .. }) = &**right {
                             assert_eq!(*value, 2);
                         } else {
                             panic!("expected integer expression with value 2 in array[1]");
@@ -253,14 +938,14 @@ mod tests {
                         panic!("expected infix expression with value 2 * 2 in array[1]");
                     }
 
-                    if let Expression::INFIX(InfixExpression { left, right, .. }) = &elements[2] {
-                        if let Expression::INT(IntExpression { value, .. }) = &**left {
+                    if let Expression::Infix(InfixExpression { left, right, .. }) = &elements[2] {
+                        if let Expression::Int(IntExpression { value, .. }) = &**left {
                             assert_eq!(*value, 3);
                         } else {
                             panic!("expected integer expression with value 3 in array[2]");
                         }
 
-                        if let Expression::INT(IntExpression { value, .. }) = &**right {
+                        if let Expression::Int(IntExpression { value, .. }) = &**right {
                             assert_eq!(*value, 3);
                         } else {
                             panic!("expected integer expression with value 3 in array[2]");
@@ -293,13 +978,13 @@ mod tests {
 
             match statement {
                 Statement::Expression(ExpressionStatement { expression, .. }) => match expression {
-                    Expression::PREFIX(PrefixExpression {
+                    Expression::Prefix(PrefixExpression {
                         operator, right, ..
                     }) => {
                         assert_eq!(operator.kind, *expected_operator);
 
                         match right.as_ref() {
-                            Expression::INT(IntExpression { value, .. }) => {
+                            Expression::Int(IntExpression { value, .. }) => {
                                 assert_eq!(value, expected_value);
                             }
                             _ => unreachable!(),
@@ -339,14 +1024,14 @@ mod tests {
 
             match statement {
                 Statement::Expression(ExpressionStatement { expression, .. }) => match expression {
-                    Expression::INFIX(InfixExpression {
+                    Expression::Infix(InfixExpression {
                         left,
                         operator,
                         right,
                         ..
                     }) => {
                         match left.as_ref() {
-                            Expression::INT(IntExpression { value, .. }) => {
+                            Expression::Int(IntExpression { value, .. }) => {
                                 assert_eq!(value, left_value);
                             }
                             _ => unreachable!(),
@@ -355,7 +1040,7 @@ mod tests {
                         assert_eq!(operator.kind, *operator_kind);
 
                         match right.as_ref() {
-                            Expression::INT(IntExpression { value, .. }) => {
+                            Expression::Int(IntExpression { value, .. }) => {
                                 assert_eq!(value, right_value);
                             }
                             _ => unreachable!(),
@@ -363,6 +1048,7 @@ mod tests {
                     }
                     _ => unreachable!(),
                 },
+
                 _ => unreachable!(),
             }
         }
@@ -444,14 +1130,14 @@ mod tests {
 
         match statement {
             Statement::Expression(ExpressionStatement { expression, .. }) => match expression {
-                Expression::IF(IfExpression {
+                Expression::If(IfExpression {
                     condition,
                     consequence,
                     alternative,
                     ..
                 }) => {
                     match condition.as_ref() {
-                        Expression::INFIX(InfixExpression { operator, .. }) => {
+                        Expression::Infix(InfixExpression { operator, .. }) => {
                             assert_eq!(operator.kind, TokenKind::LT);
                         }
                         _ => unreachable!(),
@@ -460,7 +1146,7 @@ mod tests {
                     match &consequence.statements[0] {
                         Statement::Expression(ExpressionStatement { expression, .. }) => {
                             match expression {
-                                Expression::IDENT(IdentExpression { value, .. }) => {
+                                Expression::Ident(IdentExpression { value, .. }) => {
                                     assert_eq!(&**value, "x");
                                 }
                                 _ => unreachable!(),
@@ -492,14 +1178,14 @@ mod tests {
 
         match statement {
             Statement::Expression(ExpressionStatement { expression, .. }) => match expression {
-                Expression::IF(IfExpression {
+                Expression::If(IfExpression {
                     condition,
                     consequence,
                     alternative,
                     ..
                 }) => {
                     match condition.as_ref() {
-                        Expression::INFIX(InfixExpression { operator, .. }) => {
+                        Expression::Infix(InfixExpression { operator, .. }) => {
                             assert_eq!(operator.kind, TokenKind::LT);
                         }
                         _ => unreachable!(),
@@ -508,7 +1194,7 @@ mod tests {
                     match &consequence.statements[0] {
                         Statement::Expression(ExpressionStatement { expression, .. }) => {
                             match expression {
-                                Expression::IDENT(IdentExpression { value, .. }) => {
+                                Expression::Ident(IdentExpression { value, .. }) => {
                                     assert_eq!(&**value, "x");
                                 }
                                 _ => unreachable!(),
@@ -521,7 +1207,7 @@ mod tests {
                         Some(alternative) => match &alternative.statements[0] {
                             Statement::Expression(ExpressionStatement { expression, .. }) => {
                                 match expression {
-                                    Expression::IDENT(IdentExpression { value, .. }) => {
+                                    Expression::Ident(IdentExpression { value, .. }) => {
                                         assert_eq!(&**value, "y");
                                     }
                                     _ => unreachable!(),
@@ -559,7 +1245,7 @@ mod tests {
 
             match statement {
                 Statement::Expression(ExpressionStatement { expression, .. }) => match expression {
-                    Expression::FUNCTION(FunctionExpression { parameters, .. }) => {
+                    Expression::Function(FunctionExpression { parameters, .. }) => {
                         assert_eq!(parameters.len(), expected.len());
 
                         for (i, expected) in expected.iter().enumerate() {
@@ -589,18 +1275,19 @@ mod tests {
 
         match statement {
             Statement::Expression(ExpressionStatement { expression, .. }) => match expression {
-                Expression::FUNCTION(FunctionExpression { body, .. }) => {
+                Expression::Function(FunctionExpression { body, .. }) => {
                     assert_eq!(body.statements.len(), 1);
 
                     match &body.statements[0] {
                         Statement::Expression(ExpressionStatement { expression, .. }) => {
                             match expression {
-                                Expression::INFIX(InfixExpression { operator, .. }) => {
+                                Expression::Infix(InfixExpression { operator, .. }) => {
                                     assert_eq!(operator.kind, TokenKind::PLUS);
                                 }
                                 _ => unreachable!(),
                             }
                         }
+
                         _ => unreachable!(),
                     }
                 }
@@ -625,9 +1312,9 @@ mod tests {
 
         match statement {
             Statement::Expression(ExpressionStatement { expression, .. }) => match expression {
-                Expression::CALL(call) => {
+                Expression::Call(call) => {
                     match call.function.as_ref() {
-                        Expression::IDENT(IdentExpression { value, .. }) => {
+                        Expression::Ident(IdentExpression { value, .. }) => {
                             assert_eq!(&**value, "func");
                         }
                         _ => unreachable!(),
@@ -653,9 +1340,9 @@ mod tests {
 
         match statement {
             Statement::Expression(ExpressionStatement { expression, .. }) => match expression {
-                Expression::CALL(call) => {
+                Expression::Call(call) => {
                     match call.function.as_ref() {
-                        Expression::IDENT(IdentExpression { value, .. }) => {
+                        Expression::Ident(IdentExpression { value, .. }) => {
                             assert_eq!(&**value, "add");
                         }
                         _ => unreachable!(),
@@ -664,21 +1351,21 @@ mod tests {
                     assert_eq!(call.arguments.len(), 3);
 
                     match &call.arguments[0] {
-                        Expression::INT(IntExpression { value, .. }) => {
+                        Expression::Int(IntExpression { value, .. }) => {
                             assert_eq!(*value, 1);
                         }
                         _ => unreachable!(),
                     }
 
                     match &call.arguments[1] {
-                        Expression::INFIX(InfixExpression { operator, .. }) => {
+                        Expression::Infix(InfixExpression { operator, .. }) => {
                             assert_eq!(operator.kind, TokenKind::ASTERISK);
                         }
                         _ => unreachable!(),
                     }
 
                     match &call.arguments[2] {
-                        Expression::INFIX(InfixExpression { operator, .. }) => {
+                        Expression::Infix(InfixExpression { operator, .. }) => {
                             assert_eq!(operator.kind, TokenKind::PLUS);
                         }
                         _ => unreachable!(),
@@ -702,9 +1389,9 @@ mod tests {
 
         match statement {
             Statement::Expression(ExpressionStatement { expression, .. }) => match expression {
-                Expression::CALL(call) => {
+                Expression::Call(call) => {
                     match call.function.as_ref() {
-                        Expression::FUNCTION(FunctionExpression { parameters, .. }) => {
+                        Expression::Function(FunctionExpression { parameters, .. }) => {
                             assert_eq!(parameters.len(), 2);
                         }
                         _ => unreachable!(),
@@ -716,7 +1403,7 @@ mod tests {
 
                     for (i, (expected_kind, expected_value)) in expected.iter().enumerate() {
                         match &call.arguments[i] {
-                            Expression::INT(IntExpression { token, value }) => {
+                            Expression::Int(IntExpression { token, value }) => {
                                 assert_eq!(token.kind, *expected_kind);
                                 assert_eq!(*value, *expected_value);
                             }
@@ -744,16 +1431,16 @@ mod tests {
 
         match statement {
             Statement::Expression(ExpressionStatement { expression, .. }) => match expression {
-                Expression::INDEX(index) => {
+                Expression::Index(index) => {
                     match index.left.as_ref() {
-                        Expression::IDENT(IdentExpression { value, .. }) => {
+                        Expression::Ident(IdentExpression { value, .. }) => {
                             assert_eq!(&**value, "array");
                         }
                         _ => unreachable!(),
                     }
 
                     match index.index.as_ref() {
-                        Expression::INFIX(InfixExpression { operator, .. }) => {
+                        Expression::Infix(InfixExpression { operator, .. }) => {
                             assert_eq!(operator.kind, TokenKind::PLUS);
                         }
                         _ => unreachable!(),

@@ -1,5 +1,31 @@
-use super::{BlockStatement, Token};
+use super::{Statement, Token};
 use std::fmt::Display;
+
+#[derive(Debug, PartialEq, Clone)]
+pub struct BlockExpression {
+    pub token: Token,
+    pub statements: Vec<Statement>,
+}
+
+impl Display for BlockExpression {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut output = String::new();
+
+        let mut statements = String::new();
+
+        for (i, statement) in self.statements.iter().enumerate() {
+            statements.push_str(&format!("{}", statement));
+
+            if i < self.statements.len() - 1 {
+                statements.push_str(", ");
+            }
+        }
+
+        output.push_str(&format!("{{{}}}", statements));
+
+        write!(f, "{}", output)
+    }
+}
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct IdentExpression {
@@ -92,8 +118,8 @@ impl Display for IndexExpression {
 pub struct IfExpression {
     pub token: Token,
     pub condition: Box<Expression>,
-    pub consequence: BlockStatement,
-    pub alternative: Option<BlockStatement>,
+    pub consequence: BlockExpression,
+    pub alternative: Option<BlockExpression>,
 }
 
 impl Display for IfExpression {
@@ -114,7 +140,7 @@ impl Display for IfExpression {
 pub struct FunctionExpression {
     pub token: Token,
     pub parameters: Vec<IdentExpression>,
-    pub body: BlockStatement,
+    pub body: BlockExpression,
 }
 
 impl Display for FunctionExpression {
@@ -195,33 +221,35 @@ impl Display for InfixExpression {
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum Expression {
-    IDENT(IdentExpression),
-    INT(IntExpression),
-    STRING(StringExpression),
-    BOOLEAN(BooleanExpression),
-    ARRAY(ArrayExpression),
-    INDEX(IndexExpression),
-    IF(IfExpression),
-    FUNCTION(FunctionExpression),
-    CALL(CallExpression),
-    PREFIX(PrefixExpression),
-    INFIX(InfixExpression),
+    Block(BlockExpression),
+    Ident(IdentExpression),
+    Int(IntExpression),
+    String(StringExpression),
+    Boolean(BooleanExpression),
+    Array(ArrayExpression),
+    Index(IndexExpression),
+    If(IfExpression),
+    Function(FunctionExpression),
+    Call(CallExpression),
+    Prefix(PrefixExpression),
+    Infix(InfixExpression),
 }
 
 impl Display for Expression {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Expression::IDENT(expression) => write!(f, "{}", expression),
-            Expression::INT(expression) => write!(f, "{}", expression),
-            Expression::STRING(expression) => write!(f, "{}", expression),
-            Expression::BOOLEAN(expression) => write!(f, "{}", expression),
-            Expression::ARRAY(expression) => write!(f, "{}", expression),
-            Expression::INDEX(expression) => write!(f, "{}", expression),
-            Expression::IF(expression) => write!(f, "{}", expression),
-            Expression::FUNCTION(expression) => write!(f, "{}", expression),
-            Expression::CALL(expression) => write!(f, "{}", expression),
-            Expression::PREFIX(expression) => write!(f, "{}", expression),
-            Expression::INFIX(expression) => write!(f, "{}", expression),
+            Expression::Block(expression) => write!(f, "{}", expression),
+            Expression::Ident(expression) => write!(f, "{}", expression),
+            Expression::Int(expression) => write!(f, "{}", expression),
+            Expression::String(expression) => write!(f, "{}", expression),
+            Expression::Boolean(expression) => write!(f, "{}", expression),
+            Expression::Array(expression) => write!(f, "{}", expression),
+            Expression::Index(expression) => write!(f, "{}", expression),
+            Expression::If(expression) => write!(f, "{}", expression),
+            Expression::Function(expression) => write!(f, "{}", expression),
+            Expression::Call(expression) => write!(f, "{}", expression),
+            Expression::Prefix(expression) => write!(f, "{}", expression),
+            Expression::Infix(expression) => write!(f, "{}", expression),
         }
     }
 }

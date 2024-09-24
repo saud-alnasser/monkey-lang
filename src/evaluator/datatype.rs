@@ -1,7 +1,7 @@
 use std::{cell::RefCell, fmt::Display, rc::Rc};
 
 use crate::builtins::error::Result;
-use crate::{BlockStatement, Environment, IdentExpression};
+use crate::{BlockExpression, Environment, IdentExpression};
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum DataType {
@@ -13,7 +13,7 @@ pub enum DataType {
     IDENT(Box<str>),
     FUNCTION {
         parameters: Vec<IdentExpression>,
-        body: BlockStatement,
+        body: BlockExpression,
         env: Rc<RefCell<Environment>>,
     },
     BUILTIN {
