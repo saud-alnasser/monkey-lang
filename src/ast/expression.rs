@@ -163,6 +163,33 @@ impl Display for FunctionExpression {
     }
 }
 
+pub type HashPair = (Box<Expression>, Box<Expression>);
+
+#[derive(Debug, PartialEq, Clone)]
+pub struct HashExpression {
+    pub token: Token,
+    pub pairs: Vec<HashPair>,
+}
+
+impl Display for HashExpression {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut output = String::new();
+        let mut pairs = String::new();
+
+        for (i, (key, value)) in self.pairs.iter().enumerate() {
+            pairs.push_str(&format!(" {}: {}", key, value));
+
+            if i < self.pairs.len() - 1 {
+                pairs.push_str(", ");
+            }
+        }
+
+        output.push_str(&format!("{{{}}}", pairs));
+
+        write!(f, "{}", output)
+    }
+}
+
 #[derive(Debug, PartialEq, Clone)]
 pub struct CallExpression {
     pub token: Token,
@@ -230,6 +257,7 @@ pub enum Expression {
     Index(IndexExpression),
     If(IfExpression),
     Function(FunctionExpression),
+    Hash(HashExpression),
     Call(CallExpression),
     Prefix(PrefixExpression),
     Infix(InfixExpression),
@@ -247,6 +275,7 @@ impl Display for Expression {
             Expression::Index(expression) => write!(f, "{}", expression),
             Expression::If(expression) => write!(f, "{}", expression),
             Expression::Function(expression) => write!(f, "{}", expression),
+            Expression::Hash(expression) => write!(f, "{}", expression),
             Expression::Call(expression) => write!(f, "{}", expression),
             Expression::Prefix(expression) => write!(f, "{}", expression),
             Expression::Infix(expression) => write!(f, "{}", expression),

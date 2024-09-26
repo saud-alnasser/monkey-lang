@@ -5,6 +5,7 @@ use super::datatype::DataType;
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
+    IllegalType(Token),
     TypeMismatch(DataType, Token, DataType),
     IndexTypeMismatch(DataType, Token),
     UnknownOperator(Token),
@@ -15,6 +16,11 @@ pub enum Error {
 impl Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            Error::IllegalType(token) => write!(
+                f,
+                "illegal type {:?} at {}:{}",
+                token.literal, token.line, token.column
+            ),
             Error::TypeMismatch(left, token, right) => write!(
                 f,
                 "type mismatch {:?} {} {:?} at {}:{}",
@@ -23,7 +29,7 @@ impl Display for Error {
             Error::IndexTypeMismatch(value, token) => {
                 write!(
                     f,
-                    "index type mismatch got={:?}, want=INT at {}:{}",
+                    "index type mismatch got={:?} want=INT at {}:{}",
                     value, token.line, token.column
                 )
             }

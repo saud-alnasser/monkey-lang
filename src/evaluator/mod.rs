@@ -1,6 +1,7 @@
 mod datatype;
 pub mod error;
 
+use std::collections::HashMap;
 use std::{cell::RefCell, rc::Rc};
 
 pub use self::datatype::*;
@@ -57,6 +58,30 @@ impl Evaluator {
                     }
 
                     return Ok(array[*index as usize].clone());
+                }
+
+                if let (DataType::HASH { pairs }, DataType::STRING(key)) = (&left, &index) {
+                    if let Some(value) = pairs.get(&HashKey::String(key.clone())) {
+                        return Ok(value.clone());
+                    } else {
+                        return Ok(DataType::NULL);
+                    }
+                }
+
+                if let (DataType::HASH { pairs }, DataType::INT(key)) = (&left, &index) {
+                    if let Some(value) = pairs.get(&HashKey::Int(*key)) {
+                        return Ok(value.clone());
+                    } else {
+                        return Ok(DataType::NULL);
+                    }
+                }
+
+                if let (DataType::HASH { pairs }, DataType::BOOLEAN(key)) = (&left, &index) {
+                    if let Some(value) = pairs.get(&HashKey::Boolean(*key)) {
+                        return Ok(value.clone());
+                    } else {
+                        return Ok(DataType::NULL);
+                    }
                 }
 
                 Err(Error::IndexTypeMismatch(index, expression.token))
@@ -152,6 +177,57 @@ impl Evaluator {
                 body: expression.body,
                 env: Rc::new(RefCell::new(Environment::new(Some(env)))),
             }),
+            Expression::Hash(expression) => {
+                let mut pairs = HashMap::<HashKey, DataType>::new();
+
+                for (key, value) in expression.pairs.iter() {
+                    let value = Evaluator::eval_expression(*value.clone(), Rc::clone(&env))?;
+
+                    match *key.clone() {
+                        Expression::String(expression) => {
+                            pairs.insert(HashKey::String(expression.value), value);
+                        }
+                        Expression::Int(expression) => {
+                            pairs.insert(HashKey::Int(expression.value), value);
+                        }
+                        Expression::Boolean(expression) => {
+                            pairs.insert(HashKey::Boolean(expression.value), value);
+                        }
+                        Expression::Array(expression) => {
+                            return Err(Error::IllegalType(expression.token))
+                        }
+                        Expression::Block(expression) => {
+                            return Err(Error::IllegalType(expression.token))
+                        }
+                        Expression::Ident(expression) => {
+                            return Err(Error::IllegalType(expression.token))
+                        }
+                        Expression::Call(expression) => {
+                            return Err(Error::IllegalType(expression.token))
+                        }
+                        Expression::Function(expression) => {
+                            return Err(Error::IllegalType(expression.token))
+                        }
+                        Expression::Hash(expression) => {
+                            return Err(Error::IllegalType(expression.token))
+                        }
+                        Expression::If(expression) => {
+                            return Err(Error::IllegalType(expression.token))
+                        }
+                        Expression::Index(expression) => {
+                            return Err(Error::IllegalType(expression.token))
+                        }
+                        Expression::Infix(expression) => {
+                            return Err(Error::IllegalType(expression.operator))
+                        }
+                        Expression::Prefix(expression) => {
+                            return Err(Error::IllegalType(expression.operator))
+                        }
+                    }
+                }
+
+                Ok(DataType::HASH { pairs })
+            }
             Expression::Call(expression) => {
                 let function = Evaluator::eval_expression(*expression.function, Rc::clone(&env))?;
 
@@ -565,6 +641,39 @@ mod tests {
                 assert_eq!(body.statements.first().unwrap().to_string(), "(x + 2);");
             }
             _ => panic!("expected a function, got something else"),
+        }
+    }
+
+    #[test]
+    fn test_eval_hash_expressions() {
+        let inputs = vec![
+            (
+                r#"{ "one": 1, "two": 2, "three": 3 }["one"];"#,
+                DataType::INT(1),
+            ),
+            (
+                r#"{ "one": 1, "two": 2, "three": 3 }["two"];"#,
+                DataType::INT(2),
+            ),
+            (
+                r#"{ "one": 1, "two": 2, "three": 3 }["three"];"#,
+                DataType::INT(3),
+            ),
+            (
+                r#"{ "one": 1, "two": 2, "three": 3 }["four"];"#,
+                DataType::NULL,
+            ),
+        ];
+
+        for (input, expected) in inputs {
+            let lexer = Lexer::new(input);
+            let mut parser = Parser::new(lexer);
+            let program = parser.parse().unwrap();
+            let env = Rc::new(RefCell::new(Environment::new(None)));
+
+            let result = Evaluator::execute(program, Rc::clone(&env)).unwrap();
+
+            assert_eq!(result, expected);
         }
     }
 

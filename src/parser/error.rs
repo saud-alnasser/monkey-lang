@@ -14,6 +14,7 @@ pub enum Error {
     MissingLetKeyword(Option<Token>),
     MissingAssignmentOperator(Option<Token>),
     MissingReturnKeyword(Option<Token>),
+    MissingColon(Option<Token>),
     MissingSemicolon(Option<Token>),
     MissingIdentifier(Option<Token>),
     MissingBlockExpression(Option<Token>),
@@ -96,6 +97,14 @@ impl Display for Error {
                     token.literal, token.line, token.column
                 ),
                 None => write!(f, "expected return keyword, got EOF"),
+            },
+            Error::MissingColon(token) => match token {
+                Some(token) => write!(
+                    f,
+                    "expected colon, got {} at {}:{}",
+                    token.literal, token.line, token.column
+                ),
+                None => write!(f, "expected colon, got EOF"),
             },
             Error::MissingSemicolon(token) => match token {
                 Some(token) => write!(

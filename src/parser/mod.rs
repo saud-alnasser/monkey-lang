@@ -2,9 +2,9 @@ pub mod error;
 
 use crate::{
     parser::error::*, ArrayExpression, BlockExpression, BooleanExpression, CallExpression,
-    Expression, ExpressionStatement, FunctionExpression, IdentExpression, IfExpression,
-    IndexExpression, InfixExpression, IntExpression, LetStatement, Lexer, PrefixExpression,
-    Program, ReturnStatement, Statement, StringExpression, TokenKind,
+    Expression, ExpressionStatement, FunctionExpression, HashExpression, IdentExpression,
+    IfExpression, IndexExpression, InfixExpression, IntExpression, LetStatement, Lexer,
+    PrefixExpression, Program, ReturnStatement, Statement, StringExpression, TokenKind,
 };
 
 #[derive(Debug)]
@@ -150,6 +150,14 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_expression_left(self: &mut Parser<'a>) -> Result<Expression> {
+        if let Some(expression) = self.parse_hash_expression()? {
+            if let Some(expression) = self.parse_index_expression(&expression)? {
+                return Ok(expression);
+            }
+
+            return Ok(expression);
+        }
+
         if let Some(expression) = self.parse_block_expression()? {
             return Ok(expression);
         }
@@ -212,6 +220,65 @@ impl<'a> Parser<'a> {
         }
     }
 
+    fn parse_hash_expression(self: &mut Parser<'a>) -> Result<Option<Expression>> {
+        if let Some(token) = self.lexer.peek(0) {
+            if token.kind != TokenKind::LBRACE {
+                return Ok(None);
+            }
+
+            let mut i = 0;
+
+            while let Some(token) = self.lexer.peek(i) {
+                if token.kind == TokenKind::RBRACE {
+                    return Ok(None);
+                }
+
+                if token.kind == TokenKind::COLON {
+                    let token = match self.lexer.next() {
+                        Some(token) if token.kind == TokenKind::LBRACE => token,
+                        option => return Err(Error::MissingOpeningBrace(option)),
+                    };
+
+                    let mut pairs = Vec::new();
+
+                    while let Some(token) = self.lexer.peek(0) {
+                        if token.kind == TokenKind::RBRACE {
+                            break;
+                        }
+
+                        let key = self.parse_expression(&Precedence::LOWEST)?;
+
+                        match self.lexer.next() {
+                            Some(token) if token.kind == TokenKind::COLON => token,
+                            option => return Err(Error::MissingColon(option)),
+                        };
+
+                        let value = self.parse_expression(&Precedence::LOWEST)?;
+
+                        pairs.push((Box::new(key), Box::new(value)));
+
+                        if let Some(token) = self.lexer.peek(0) {
+                            if token.kind == TokenKind::COMMA {
+                                self.lexer.next();
+                            }
+                        }
+                    }
+
+                    match self.lexer.next() {
+                        Some(token) if token.kind == TokenKind::RBRACE => token,
+                        option => return Err(Error::MissingClosingBrace(option)),
+                    };
+
+                    return Ok(Some(Expression::Hash(HashExpression { token, pairs })));
+                }
+
+                i += 1;
+            }
+        }
+
+        Ok(None)
+    }
+
     fn parse_block_expression(self: &mut Parser<'a>) -> Result<Option<Expression>> {
         if let Some(token) = self.lexer.peek(0) {
             if token.kind != TokenKind::LBRACE {
@@ -223,14 +290,14 @@ impl<'a> Parser<'a> {
                 option => return Err(Error::MissingOpeningBrace(option)),
             };
 
-            let mut expressions = Vec::new();
+            let mut statements = Vec::new();
 
             while let Some(token) = self.lexer.peek(0) {
                 if token.kind == TokenKind::RBRACE {
                     break;
                 }
 
-                expressions.push(self.parse_statement()?);
+                statements.push(self.parse_statement()?);
             }
 
             match self.lexer.next() {
@@ -240,7 +307,7 @@ impl<'a> Parser<'a> {
 
             return Ok(Some(Expression::Block(BlockExpression {
                 token,
-                statements: expressions,
+                statements,
             })));
         }
 
@@ -430,6 +497,9 @@ impl<'a> Parser<'a> {
                 Expression::Function(expression) => {
                     return Err(Error::MissingBlockExpression(Some(expression.token)))
                 }
+                Expression::Hash(expression) => {
+                    return Err(Error::MissingBlockExpression(Some(expression.token)))
+                }
                 Expression::Call(expression) => {
                     return Err(Error::MissingBlockExpression(Some(expression.token)))
                 }
@@ -469,6 +539,9 @@ impl<'a> Parser<'a> {
                             return Err(Error::MissingBlockExpression(Some(expression.token)))
                         }
                         Expression::Function(expression) => {
+                            return Err(Error::MissingBlockExpression(Some(expression.token)))
+                        }
+                        Expression::Hash(expression) => {
                             return Err(Error::MissingBlockExpression(Some(expression.token)))
                         }
                         Expression::Call(expression) => {
@@ -565,6 +638,9 @@ impl<'a> Parser<'a> {
                     return Err(Error::MissingBlockExpression(Some(expression.token)))
                 }
                 Expression::Function(expression) => {
+                    return Err(Error::MissingBlockExpression(Some(expression.token)))
+                }
+                Expression::Hash(expression) => {
                     return Err(Error::MissingBlockExpression(Some(expression.token)))
                 }
                 Expression::Call(expression) => {
@@ -666,12 +742,16 @@ impl<'a> Parser<'a> {
             let token = match indexable {
                 Expression::Ident(ident) => ident.token.clone(),
                 Expression::Array(array) => array.token.clone(),
+                Expression::Hash(hash) => hash.token.clone(),
+                Expression::Index(index) => index.token.clone(),
                 _ => unreachable!(),
             };
 
             let left = match indexable {
                 Expression::Ident(ident) => Box::new(Expression::Ident(ident.clone())),
                 Expression::Array(array) => Box::new(Expression::Array(array.clone())),
+                Expression::Hash(hash) => Box::new(Expression::Hash(hash.clone())),
+                Expression::Index(index) => Box::new(Expression::Index(index.clone())),
                 _ => unreachable!(),
             };
 
@@ -687,11 +767,13 @@ impl<'a> Parser<'a> {
                 option => return Err(Error::MissingClosingBracket(option)),
             };
 
-            return Ok(Some(Expression::Index(IndexExpression {
-                token,
-                left,
-                index,
-            })));
+            let expression = Expression::Index(IndexExpression { token, left, index });
+
+            if let Some(expression) = self.parse_index_expression(&expression)? {
+                return Ok(Some(expression));
+            }
+
+            return Ok(Some(expression));
         }
 
         Ok(None)
@@ -727,10 +809,13 @@ impl From<&TokenKind> for Precedence {
 
 #[cfg(test)]
 mod tests {
+    use std::{cell::RefCell, rc::Rc};
+
     use crate::{
-        ArrayExpression, BooleanExpression, Expression, ExpressionStatement, FunctionExpression,
-        IdentExpression, IfExpression, InfixExpression, IntExpression, LetStatement, Lexer,
-        PrefixExpression, ReturnStatement, StringExpression, TokenKind,
+        ArrayExpression, BooleanExpression, DataType, Environment, Evaluator, Expression,
+        ExpressionStatement, FunctionExpression, HashExpression, IdentExpression, IfExpression,
+        InfixExpression, IntExpression, LetStatement, Lexer, PrefixExpression, ReturnStatement,
+        StringExpression, Token, TokenKind,
     };
 
     use super::*;
@@ -1298,6 +1383,189 @@ mod tests {
     }
 
     #[test]
+    fn test_hash_expressions() {
+        let input = r#"{ "one": 1, "two": 2, "three": 3 };"#;
+
+        let lexer = Lexer::new(input);
+        let mut parser = Parser::new(lexer);
+
+        let program = parser.parse().unwrap();
+
+        assert_eq!(program.statements.len(), 1);
+
+        let statement = &program.statements[0];
+
+        let expected = [("one", 1), ("two", 2), ("three", 3)];
+
+        match statement {
+            Statement::Expression(ExpressionStatement { expression, .. }) => match expression {
+                Expression::Hash(HashExpression { pairs, .. }) => {
+                    assert_eq!(pairs.len(), expected.len());
+
+                    for (i, (expected_key, expected_value)) in expected.iter().enumerate() {
+                        let pair = &pairs[i];
+
+                        match &*pair.0 {
+                            Expression::String(StringExpression { value, .. }) => {
+                                assert_eq!(&**value, *expected_key);
+                            }
+                            _ => unreachable!(),
+                        }
+
+                        match *pair.1 {
+                            Expression::Int(IntExpression { value, .. }) => {
+                                assert_eq!(value, *expected_value);
+                            }
+                            _ => unreachable!(),
+                        }
+                    }
+                }
+                _ => unreachable!(),
+            },
+            _ => unreachable!(),
+        }
+
+        let input = "{};";
+
+        let lexer = Lexer::new(input);
+        let mut parser = Parser::new(lexer);
+
+        let program = parser.parse().unwrap();
+
+        assert_eq!(program.statements.len(), 1);
+
+        let statement = &program.statements[0];
+
+        match statement {
+            Statement::Expression(ExpressionStatement { expression, .. }) => match expression {
+                Expression::Block(BlockExpression { statements, .. }) => {
+                    assert_eq!(statements.len(), 0);
+                }
+                _ => unreachable!(),
+            },
+            _ => unreachable!(),
+        }
+
+        let input = r#"{ "one": (1 * 3), "two": (2 + 5) };"#;
+        let lexer = Lexer::new(input);
+        let mut parser = Parser::new(lexer);
+
+        let program = parser.parse().unwrap();
+
+        assert_eq!(program.statements.len(), 1);
+
+        let statement = &program.statements[0];
+
+        match statement {
+            Statement::Expression(ExpressionStatement { expression, .. }) => match expression {
+                Expression::Hash(HashExpression { pairs, .. }) => {
+                    let expected = [
+                        ("one", 1, TokenKind::ASTERISK, 3),
+                        ("two", 2, TokenKind::PLUS, 5),
+                    ];
+
+                    assert_eq!(pairs.len(), expected.len());
+
+                    for (
+                        i,
+                        (
+                            expected_key,
+                            expected_left_value,
+                            expected_operator,
+                            expected_right_value,
+                        ),
+                    ) in expected.iter().enumerate()
+                    {
+                        let pair = &pairs[i];
+
+                        match &*pair.0 {
+                            Expression::String(StringExpression { value, .. }) => {
+                                assert_eq!(&**value, *expected_key);
+                            }
+                            _ => unreachable!(),
+                        }
+
+                        match &*pair.1 {
+                            Expression::Infix(InfixExpression {
+                                left,
+                                right,
+                                operator,
+                            }) => {
+                                match &**left {
+                                    Expression::Int(IntExpression { value, .. }) => {
+                                        assert_eq!(*value, *expected_left_value);
+                                    }
+                                    _ => unreachable!(),
+                                }
+
+                                assert_eq!(operator.kind, *expected_operator);
+
+                                match &**right {
+                                    Expression::Int(IntExpression { value, .. }) => {
+                                        assert_eq!(*value, *expected_right_value);
+                                    }
+                                    _ => unreachable!(),
+                                }
+                            }
+                            _ => unreachable!(),
+                        }
+                    }
+                }
+                _ => unreachable!(),
+            },
+            _ => unreachable!(),
+        }
+
+        let input = r#"{ "one": 1, "two": 2, "three": 3 }["one"];"#;
+        let lexer = Lexer::new(input);
+        let mut parser = Parser::new(lexer);
+
+        let program = parser.parse().unwrap();
+
+        assert_eq!(program.statements.len(), 1);
+
+        let statement = &program.statements[0];
+
+        match statement {
+            Statement::Expression(ExpressionStatement { expression, .. }) => match expression {
+                Expression::Index(IndexExpression { left, .. }) => match &**left {
+                    Expression::Hash(HashExpression { pairs, .. }) => {
+                        assert_eq!(pairs.len(), 3);
+
+                        assert_eq!(
+                            pairs[0].0,
+                            Box::new(Expression::String(StringExpression {
+                                token: Token {
+                                    kind: TokenKind::STRING,
+                                    line: 1,
+                                    column: 3,
+                                    literal: "\"one\"".into(),
+                                },
+                                value: "one".into(),
+                            }))
+                        );
+                        assert_eq!(
+                            pairs[0].1,
+                            Box::new(Expression::Int(IntExpression {
+                                token: Token {
+                                    kind: TokenKind::INT,
+                                    line: 1,
+                                    column: 10,
+                                    literal: "1".into(),
+                                },
+                                value: 1,
+                            }))
+                        );
+                    }
+                    _ => unreachable!(),
+                },
+                _ => unreachable!(),
+            },
+            _ => unreachable!(),
+        }
+    }
+
+    #[test]
     fn test_call_expressions() {
         let empty_call_input = "func();";
 
@@ -1450,5 +1718,19 @@ mod tests {
             },
             _ => unreachable!(),
         }
+    }
+
+    #[test]
+    fn test_array_of_hashes_expressions() {
+        let input = r#"[ { "one": 1, "two": 2, "three": 3 }, { "one": 1, "two": 2, "three": 3 } ][0]["one"];"#;
+
+        let lexer = Lexer::new(input);
+        let mut parser = Parser::new(lexer);
+        let program = parser.parse().unwrap();
+        let env = Rc::new(RefCell::new(Environment::new(None)));
+
+        let result = Evaluator::execute(program, Rc::clone(&env)).unwrap();
+
+        assert_eq!(result, DataType::INT(1));
     }
 }
