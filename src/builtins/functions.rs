@@ -155,3 +155,17 @@ pub const PUSH: (&'static str, DataType) = (
         },
     },
 );
+
+/// prints the given value to the standard output
+pub const PUTS: (&'static str, DataType) = (
+    "puts",
+    DataType::BUILTIN {
+        func: |args| {
+            for arg in args {
+                println!("{}", arg);
+            }
+
+            Ok(DataType::UNDEFINED)
+        },
+    },
+);
