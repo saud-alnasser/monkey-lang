@@ -1,3 +1,11 @@
+## 0.0.14 (2024-09-26)
+
+### Features
+
+#### implement hash literals (#99)
+
+#### add 'puts' function for printing to stdout (#100)
+
 ## 0.0.13 (2024-09-23)
 
 ### Features
