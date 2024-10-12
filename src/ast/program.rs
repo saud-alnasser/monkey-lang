@@ -1,21 +1,8 @@
 use super::Statement;
-use std::fmt::Display;
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct Program {
     pub statements: Vec<Statement>,
-}
-
-impl Display for Program {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let mut output = String::new();
-
-        for statement in &self.statements {
-            output.push_str(&format!("{}", statement));
-        }
-
-        write!(f, "{}", output)
-    }
 }
 
 impl Program {

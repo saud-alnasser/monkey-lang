@@ -1,6 +1,9 @@
 pub mod error;
 mod functions;
 
+use crate::DataType;
 use functions::*;
 
-pub const BUILTINS: [(&'static str, crate::DataType); 6] = [LEN, FIRST, LAST, REST, PUSH, PUTS];
+pub fn builtins<'a>() -> [(&'a str, DataType); 6] {
+    [len(), first(), last(), rest(), push(), puts()]
+}

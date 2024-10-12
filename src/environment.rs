@@ -1,10 +1,10 @@
 use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
-use crate::{DataType, BUILTINS};
+use crate::{builtins, DataType};
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct Environment {
-    store: HashMap<String, DataType>,
+    store: HashMap<Box<str>, DataType>,
     outer: Option<Rc<RefCell<Environment>>>,
 }
 
@@ -20,7 +20,7 @@ impl Environment {
                         outer: None,
                     };
 
-                    for (key, value) in BUILTINS {
+                    for (key, value) in builtins() {
                         outer.set(key, value);
                     }
 
@@ -41,6 +41,6 @@ impl Environment {
     }
 
     pub fn set(&mut self, key: &str, value: DataType) {
-        self.store.insert(key.to_string(), value);
+        self.store.insert(key.into(), value);
     }
 }

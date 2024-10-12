@@ -4,10 +4,7 @@ use std::{
     rc::Rc,
 };
 
-use crate::{
-    error::{Error, Result},
-    DataType, Environment, Evaluator, Lexer, Parser,
-};
+use crate::{evaluator, lexer, parser, DataType, Environment};
 
 static MONKEY_FACE: &str = r#"            
             __,__
@@ -23,43 +20,46 @@ static MONKEY_FACE: &str = r#"
            '-----'
 "#;
 
-pub struct REPL;
+pub struct REPL {
+    env: Rc<RefCell<Environment>>,
+}
 
 impl REPL {
-    fn execute(code: &str, env: Rc<RefCell<Environment>>) -> Result<DataType> {
-        let lexer = Lexer::new(code);
-        let mut parser = Parser::new(lexer);
-        let program = parser.parse().map_err(|error| Error::Parser(error))?;
-
-        Evaluator::execute(program, env).map_err(|error| Error::Evaluator(error))
+    pub fn new() -> Self {
+        Self {
+            env: Rc::new(RefCell::new(Environment::new(None))),
+        }
     }
 
-    pub fn run() {
+    pub fn run(&mut self) {
         println!("{}", MONKEY_FACE);
         println!("Welcome to the Monkey programming language REPL!");
         println!("Feel free to type in commands");
 
         let mut code = String::new();
-        let env = Rc::new(RefCell::new(Environment::new(None)));
 
         loop {
             print!(">> ");
             io::stdout().flush().unwrap();
             io::stdin().read_line(&mut code).unwrap();
 
-            match REPL::execute(&code, Rc::clone(&env)) {
-                Ok(data) => match data {
-                    DataType::UNDEFINED => (),
-                    _ => println!("{}", data),
+            match lexer::parse(&code) {
+                Ok(tokens) => match parser::parse(tokens) {
+                    Ok(program) => match evaluator::execute(program, Rc::clone(&self.env)) {
+                        Ok(DataType::Undefined) => (),
+                        Ok(data) => println!("{}", data),
+                        Err(error) => eprintln!("error: {}", error),
+                    },
+                    Err(error) => {
+                        eprintln!("error: {}", error);
+                    }
                 },
                 Err(error) => {
-                    eprintln!("{}", MONKEY_FACE);
-                    eprintln!("Woops! We ran into some monkey business here!");
                     eprintln!("error: {}", error);
                 }
-            }
+            };
 
-            code.clear();
+            code.clear()
         }
     }
 }

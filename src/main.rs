@@ -7,7 +7,7 @@ fn main() {
 
     let handle = builder
         .spawn(|| {
-            REPL::run();
+            REPL::new().run();
         })
         .expect("failed to create a thread for the REPL");
 

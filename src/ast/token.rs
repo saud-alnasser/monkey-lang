@@ -1,9 +1,10 @@
-#[derive(Debug, PartialEq, Clone)]
-pub enum TokenKind {
+use internment::Intern;
+use std::fmt::Display;
+
+#[derive(Debug, PartialEq, Eq, Hash, Clone)]
+pub enum Token {
     // special
     WHITESPACE,
-    ILLEGAL,
-    EOF,
 
     // operators
     ASSIGN,
@@ -29,14 +30,10 @@ pub enum TokenKind {
     RPAREN,
     LBRACE,
     RBRACE,
-    RBRACKET,
     LBRACKET,
+    RBRACKET,
 
-    // literals
-    INT,
-    STRING,
-
-    // keywords & identifiers
+    // keywords
     LET,
     FUNCTION,
     RETURN,
@@ -44,13 +41,48 @@ pub enum TokenKind {
     ELSE,
     TRUE,
     FALSE,
-    IDENT,
+
+    // literals
+    INT(Intern<String>),
+    STRING(Intern<String>),
+    IDENTIFIER(Intern<String>),
 }
 
-#[derive(Debug, PartialEq, Clone)]
-pub struct Token {
-    pub kind: TokenKind,
-    pub line: usize,
-    pub column: usize,
-    pub literal: Box<str>,
+impl Display for Token {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Token::WHITESPACE => write!(f, ""),
+            Token::ASSIGN => write!(f, "="),
+            Token::PLUS => write!(f, "+"),
+            Token::MINUS => write!(f, "-"),
+            Token::ASTERISK => write!(f, "*"),
+            Token::SLASH => write!(f, "/"),
+            Token::BANG => write!(f, "!"),
+            Token::GT => write!(f, ">"),
+            Token::LT => write!(f, "<"),
+            Token::EQ => write!(f, "=="),
+            Token::NEQ => write!(f, "!="),
+            Token::LTE => write!(f, "<="),
+            Token::GTE => write!(f, ">="),
+            Token::COMMA => write!(f, ","),
+            Token::COLON => write!(f, ":"),
+            Token::SEMICOLON => write!(f, ";"),
+            Token::LPAREN => write!(f, "("),
+            Token::RPAREN => write!(f, ")"),
+            Token::LBRACE => write!(f, "{{"),
+            Token::RBRACE => write!(f, "}}"),
+            Token::LBRACKET => write!(f, "["),
+            Token::RBRACKET => write!(f, "]"),
+            Token::LET => write!(f, "let"),
+            Token::FUNCTION => write!(f, "fn"),
+            Token::RETURN => write!(f, "return"),
+            Token::IF => write!(f, "if"),
+            Token::ELSE => write!(f, "else"),
+            Token::TRUE => write!(f, "true"),
+            Token::FALSE => write!(f, "false"),
+            Token::INT(value) => write!(f, "{}", value),
+            Token::STRING(value) => write!(f, "\"{}\"", value),
+            Token::IDENTIFIER(value) => write!(f, "{}", value),
+        }
+    }
 }

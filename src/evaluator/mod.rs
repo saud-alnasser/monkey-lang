@@ -1,310 +1,349 @@
-mod datatype;
-pub mod error;
+mod error;
 
-use std::collections::HashMap;
-use std::{cell::RefCell, rc::Rc};
+use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
-pub use self::datatype::*;
-pub use self::error::*;
-use crate::Statement;
-use crate::{Environment, Expression, Program, TokenKind};
+use self::error::Result;
+use crate::{ast::*, datatype::*, Environment};
 
-pub struct Evaluator;
+#[derive(Debug, PartialEq, Clone)]
+enum Tag {
+    Literal,
+    Identifier,
+    Return,
+}
 
-impl Evaluator {
-    fn eval_expression(expression: Expression, env: Rc<RefCell<Environment>>) -> Result<DataType> {
-        match expression {
-            Expression::Block(block) => {
-                let mut result = DataType::UNDEFINED;
+type Tagged<T> = (T, Tag);
 
-                for statement in block.statements {
-                    result = Evaluator::eval_statement(statement, Rc::clone(&env))?;
+pub fn execute(program: Program, env: Rc<RefCell<Environment>>) -> Result<DataType> {
+    let mut result: Tagged<DataType> = (DataType::Undefined, Tag::Literal);
 
-                    if let DataType::RETURN(_) = result {
-                        return Ok(result);
-                    }
-                }
+    for stmt in program.statements {
+        result = statement(stmt, Rc::clone(&env))?;
 
-                Ok(result)
-            }
-            Expression::Int(expression) => {
-                return Ok(DataType::INT(expression.value));
-            }
-            Expression::String(expression) => {
-                return Ok(DataType::STRING(expression.value));
-            }
-            Expression::Boolean(expression) => {
-                return Ok(DataType::BOOLEAN(expression.value));
-            }
-            Expression::Array(expression) => {
-                let elements = expression
-                    .elements
-                    .iter()
-                    .map(|element| {
-                        Evaluator::eval_expression(element.clone(), Rc::clone(&env))
-                            .expect("failed to evaluate array element")
-                    })
-                    .collect::<Vec<DataType>>();
+        if let Tag::Return = result.1 {
+            return Ok(result.0);
+        }
+    }
 
-                return Ok(DataType::ARRAY(elements));
-            }
-            Expression::Index(expression) => {
-                let left = Evaluator::eval_expression(*expression.left, Rc::clone(&env))?;
-                let index = Evaluator::eval_expression(*expression.index, Rc::clone(&env))?;
+    Ok(result.0)
+}
 
-                if let (DataType::ARRAY(array), DataType::INT(index)) = (&left, &index) {
-                    if index < &0 || *index as usize >= array.len() {
-                        return Ok(DataType::NULL);
-                    }
+fn statement(stmt: Statement, env: Rc<RefCell<Environment>>) -> Result<Tagged<DataType>> {
+    match stmt {
+        Statement::Let {
+            identifier: ident,
+            expression: expr,
+        } => {
+            let ident = &ident.value;
+            let value = expression(expr, Rc::clone(&env))?.0;
+            env.borrow_mut().set(ident, value);
+            Ok((DataType::Undefined, Tag::Literal))
+        }
+        Statement::Return(expr) => Ok((expression(expr, Rc::clone(&env))?.0, Tag::Return)),
+        Statement::Expression(expr) => expression(expr, env),
+    }
+}
 
-                    return Ok(array[*index as usize].clone());
-                }
+fn expression(expr: Expression, env: Rc<RefCell<Environment>>) -> Result<Tagged<DataType>> {
+    match expr {
+        Expression::Block(expr) => block(expr, env),
+        Expression::Array(expr) => array(expr, env),
+        Expression::Object(expr) => object(expr, env),
+        Expression::Function(expr) => function(expr, env),
+        Expression::If(expr) => r#if(expr, env),
+        Expression::Call(expr) => call(expr, env),
+        Expression::Index(expr) => index(expr, env),
+        Expression::Int(expr) => int(expr),
+        Expression::String(expr) => string(expr),
+        Expression::Boolean(expr) => boolean(expr),
+        Expression::Identifier(expr) => identifier(expr, env),
+        Expression::Prefix(expr) => prefix(expr, env),
+        Expression::Infix(expr) => infix(expr, env),
+    }
+}
 
-                if let (DataType::HASH { pairs }, DataType::STRING(key)) = (&left, &index) {
-                    if let Some(value) = pairs.get(&HashKey::String(key.clone())) {
-                        return Ok(value.clone());
-                    } else {
-                        return Ok(DataType::NULL);
-                    }
-                }
+fn block(expr: BlockExpression, env: Rc<RefCell<Environment>>) -> Result<Tagged<DataType>> {
+    let mut result: Tagged<DataType> = (DataType::Undefined, Tag::Literal);
 
-                if let (DataType::HASH { pairs }, DataType::INT(key)) = (&left, &index) {
-                    if let Some(value) = pairs.get(&HashKey::Int(*key)) {
-                        return Ok(value.clone());
-                    } else {
-                        return Ok(DataType::NULL);
-                    }
-                }
+    for stmt in expr.statements {
+        result = statement(stmt, Rc::clone(&env))?;
 
-                if let (DataType::HASH { pairs }, DataType::BOOLEAN(key)) = (&left, &index) {
-                    if let Some(value) = pairs.get(&HashKey::Boolean(*key)) {
-                        return Ok(value.clone());
-                    } else {
-                        return Ok(DataType::NULL);
-                    }
-                }
+        if let Tag::Return = result.1 {
+            return Ok(result);
+        }
+    }
 
-                Err(Error::IndexTypeMismatch(index, expression.token))
-            }
-            Expression::Prefix(expression) => {
-                let right = Evaluator::eval_expression(*expression.right, Rc::clone(&env))?;
+    Ok(result)
+}
 
-                if expression.operator.kind == TokenKind::BANG {
-                    if let DataType::BOOLEAN(value) = right {
-                        return Ok(DataType::BOOLEAN(!value));
-                    }
+fn array(expr: ArrayExpression, env: Rc<RefCell<Environment>>) -> Result<Tagged<DataType>> {
+    Ok((
+        DataType::Array(Array::new(
+            expr.elements
+                .into_iter()
+                .map(|element| {
+                    expression(element, Rc::clone(&env))
+                        // TODO: replace expected with propagated error
+                        .expect("failed to evaluate array element")
+                        .0
+                })
+                .collect(),
+        )),
+        Tag::Literal,
+    ))
+}
 
-                    if let DataType::INT(value) = right {
-                        return Ok(DataType::BOOLEAN(value == 0));
-                    }
-                };
+fn object(expr: ObjectExpression, env: Rc<RefCell<Environment>>) -> Result<Tagged<DataType>> {
+    let mut pairs = HashMap::<ObjectKey, DataType>::new();
 
-                if expression.operator.kind == TokenKind::MINUS {
-                    if let DataType::INT(value) = right {
-                        return Ok(DataType::INT(-value));
-                    };
-                }
-
-                Err(Error::UnknownOperator(expression.operator))
-            }
-            Expression::Infix(expression) => {
-                let left = Evaluator::eval_expression(*expression.left, Rc::clone(&env))?;
-                let right = Evaluator::eval_expression(*expression.right, Rc::clone(&env))?;
-                let operator = expression.operator;
-
-                if let (DataType::INT(left), DataType::INT(right)) = (&left, &right) {
-                    match operator.kind {
-                        TokenKind::PLUS => return Ok(DataType::INT(left + right)),
-                        TokenKind::MINUS => return Ok(DataType::INT(left - right)),
-                        TokenKind::ASTERISK => return Ok(DataType::INT(left * right)),
-                        TokenKind::SLASH => return Ok(DataType::INT(left / right)),
-                        TokenKind::LT => return Ok(DataType::BOOLEAN(left < right)),
-                        TokenKind::GT => return Ok(DataType::BOOLEAN(left > right)),
-                        TokenKind::LTE => return Ok(DataType::BOOLEAN(left <= right)),
-                        TokenKind::GTE => return Ok(DataType::BOOLEAN(left >= right)),
-                        TokenKind::EQ => return Ok(DataType::BOOLEAN(left == right)),
-                        TokenKind::NEQ => return Ok(DataType::BOOLEAN(left != right)),
-                        _ => return Err(Error::UnknownOperator(operator)),
-                    }
-                }
-
-                if let (DataType::BOOLEAN(left), DataType::BOOLEAN(right)) = (&left, &right) {
-                    match operator.kind {
-                        TokenKind::EQ => return Ok(DataType::BOOLEAN(left == right)),
-                        TokenKind::NEQ => return Ok(DataType::BOOLEAN(left != right)),
-                        _ => return Err(Error::UnknownOperator(operator)),
-                    }
-                }
-
-                if let (DataType::STRING(left), DataType::STRING(right)) = (&left, &right) {
-                    if operator.kind == TokenKind::PLUS {
-                        return Ok(DataType::STRING(
-                            format!("{}{}", left, right).into_boxed_str(),
-                        ));
-                    }
-                }
-
-                Err(Error::TypeMismatch(left, operator, right))
-            }
-            Expression::If(expression) => {
-                let condition =
-                    match Evaluator::eval_expression(*expression.condition, Rc::clone(&env))? {
-                        DataType::BOOLEAN(value) => value,
-                        DataType::INT(value) => value != 0,
-                        _ => false,
-                    };
-
-                match condition {
-                    true => Ok(Evaluator::eval_expression(
-                        Expression::Block(expression.consequence),
-                        Rc::clone(&env),
-                    )?),
-                    false => match expression.alternative {
-                        Some(statement) => Ok(Evaluator::eval_expression(
-                            Expression::Block(statement),
-                            env,
-                        )?),
-                        None => Ok(DataType::UNDEFINED),
-                    },
-                }
-            }
-            Expression::Ident(expression) => match env.borrow().get(&expression.value) {
-                Some(value) => Ok(value.clone()),
-                None => Err(Error::UndefinedVariable(DataType::IDENT(expression.value))),
+    for (key, value) in expr.pairs.into_iter() {
+        pairs.insert(
+            match key {
+                Expression::String(expr) => ObjectKey::String(String::new(expr.value)),
+                Expression::Int(expr) => ObjectKey::Integer(Integer::new(expr.value)),
+                Expression::Boolean(expr) => ObjectKey::Boolean(Boolean::new(expr.value)),
+                // TODO: replace panic with propagated error
+                _ => panic!("object key type mismatch"),
             },
-            Expression::Function(expression) => Ok(DataType::FUNCTION {
-                parameters: expression.parameters,
-                body: expression.body,
-                env: Rc::new(RefCell::new(Environment::new(Some(env)))),
-            }),
-            Expression::Hash(expression) => {
-                let mut pairs = HashMap::<HashKey, DataType>::new();
+            expression(value, Rc::clone(&env))?.0,
+        );
+    }
 
-                for (key, value) in expression.pairs.iter() {
-                    let value = Evaluator::eval_expression(*value.clone(), Rc::clone(&env))?;
+    Ok((DataType::Object(Object::new(pairs)), Tag::Literal))
+}
 
-                    match *key.clone() {
-                        Expression::String(expression) => {
-                            pairs.insert(HashKey::String(expression.value), value);
-                        }
-                        Expression::Int(expression) => {
-                            pairs.insert(HashKey::Int(expression.value), value);
-                        }
-                        Expression::Boolean(expression) => {
-                            pairs.insert(HashKey::Boolean(expression.value), value);
-                        }
-                        Expression::Array(expression) => {
-                            return Err(Error::IllegalType(expression.token))
-                        }
-                        Expression::Block(expression) => {
-                            return Err(Error::IllegalType(expression.token))
-                        }
-                        Expression::Ident(expression) => {
-                            return Err(Error::IllegalType(expression.token))
-                        }
-                        Expression::Call(expression) => {
-                            return Err(Error::IllegalType(expression.token))
-                        }
-                        Expression::Function(expression) => {
-                            return Err(Error::IllegalType(expression.token))
-                        }
-                        Expression::Hash(expression) => {
-                            return Err(Error::IllegalType(expression.token))
-                        }
-                        Expression::If(expression) => {
-                            return Err(Error::IllegalType(expression.token))
-                        }
-                        Expression::Index(expression) => {
-                            return Err(Error::IllegalType(expression.token))
-                        }
-                        Expression::Infix(expression) => {
-                            return Err(Error::IllegalType(expression.operator))
-                        }
-                        Expression::Prefix(expression) => {
-                            return Err(Error::IllegalType(expression.operator))
-                        }
+fn function(expr: FunctionExpression, env: Rc<RefCell<Environment>>) -> Result<Tagged<DataType>> {
+    Ok((
+        DataType::Function(Function::Normal {
+            parameters: expr
+                .parameters
+                .into_iter()
+                .map(|param| param.value)
+                .collect(),
+            body: expr.body,
+            env: Rc::new(RefCell::new(Environment::new(Some(Rc::clone(&env))))),
+        }),
+        Tag::Literal,
+    ))
+}
+
+fn r#if(expr: IfExpression, env: Rc<RefCell<Environment>>) -> Result<Tagged<DataType>> {
+    let condition = match expression(*expr.condition, Rc::clone(&env))?.0 {
+        DataType::Boolean(value) => *value,
+        DataType::Integer(value) => *value != 0,
+        _ => false,
+    };
+
+    Ok(match condition {
+        true => block(*expr.consequence, env)?,
+        false => match expr.alternative {
+            Some(alternative) => block(*alternative, env)?,
+            None => (DataType::Undefined, Tag::Literal),
+        },
+    })
+}
+
+fn call(expr: CallExpression, env: Rc<RefCell<Environment>>) -> Result<Tagged<DataType>> {
+    let callable = expression(*expr.callable, Rc::clone(&env))?.0;
+
+    let arguments = expr
+        .arguments
+        .into_iter()
+        .map(|argument| expression(argument, Rc::clone(&env)))
+        .collect::<Result<Vec<Tagged<DataType>>>>()?;
+
+    match callable {
+        DataType::Function(Function::Normal {
+            parameters,
+            body,
+            env,
+        }) => {
+            let scoped_env = Rc::new(RefCell::new(Environment::new(Some(Rc::clone(&env)))));
+
+            for (parameter, argument) in parameters.into_iter().zip(arguments.into_iter()) {
+                scoped_env.borrow_mut().set(&parameter, argument.0);
+            }
+
+            return Ok((block(*body, Rc::clone(&scoped_env))?.0, Tag::Literal));
+        }
+        DataType::Function(Function::Native(function)) => {
+            let args = arguments
+                .into_iter()
+                .map(|argument| argument.0)
+                .collect::<Vec<DataType>>();
+
+            return Ok((function(args)?, Tag::Literal));
+        }
+        // TODO: replace panic with propagated error
+        _ => panic!("callable type mismatch"),
+    }
+}
+
+fn index(expr: IndexExpression, env: Rc<RefCell<Environment>>) -> Result<Tagged<DataType>> {
+    let indexable = expression(*expr.left, Rc::clone(&env))?.0;
+    let index = expression(*expr.index, Rc::clone(&env))?.0;
+
+    if let DataType::Array(array) = &indexable {
+        if let DataType::Integer(value) = index {
+            return Ok((
+                match *value < 0 || *value as usize >= array.len() {
+                    true => DataType::Null,
+                    false => {
+                        array
+                            .get(*value as usize)
+                            // TODO: replace panic with propagated error
+                            .expect("failed to get array element")
+                            .clone()
                     }
-                }
-
-                Ok(DataType::HASH { pairs })
-            }
-            Expression::Call(expression) => {
-                let function = Evaluator::eval_expression(*expression.function, Rc::clone(&env))?;
-
-                let arguments = expression
-                    .arguments
-                    .iter()
-                    .map(|argument| {
-                        Evaluator::eval_expression(argument.clone(), Rc::clone(&env))
-                            .expect("failed to evaluate function call passed arguments")
-                    })
-                    .collect::<Vec<DataType>>();
-
-                if let DataType::FUNCTION {
-                    parameters,
-                    body,
-                    env,
-                } = function
-                {
-                    let extended_env = Rc::new(RefCell::new(Environment::new(Some(env))));
-
-                    for (parameter, argument) in parameters.iter().zip(arguments.iter()) {
-                        extended_env
-                            .borrow_mut()
-                            .set(&parameter.value, argument.clone());
-                    }
-
-                    return Evaluator::eval_expression(Expression::Block(body), extended_env);
-                }
-
-                if let DataType::BUILTIN { func } = function {
-                    return func(arguments).map_err(|error| Error::Builtin(error));
-                }
-
-                Err(Error::UnknownOperator(expression.token))
-            }
+                },
+                Tag::Literal,
+            ));
         }
     }
 
-    fn eval_statement(statement: Statement, env: Rc<RefCell<Environment>>) -> Result<DataType> {
-        match statement {
-            Statement::Let(statement) => {
-                let value = Evaluator::eval_expression(statement.expression, Rc::clone(&env))?;
-                env.borrow_mut().set(&statement.identifier, value);
+    if let DataType::Object(object) = indexable {
+        if let DataType::String(key) = index {
+            return match object.get(&ObjectKey::String(key)) {
+                Some(value) => Ok((value.clone(), Tag::Literal)),
+                None => Ok((DataType::Null, Tag::Literal)),
+            };
+        }
 
-                Ok(DataType::UNDEFINED)
-            }
-            Statement::Return(statement) => Ok(DataType::RETURN(Box::new(
-                Evaluator::eval_expression(statement.expression, Rc::clone(&env))?,
-            ))),
-            Statement::Expression(statement) => {
-                Evaluator::eval_expression(statement.expression, Rc::clone(&env))
-            }
+        if let DataType::Integer(key) = index {
+            return match object.get(&ObjectKey::Integer(key)) {
+                Some(value) => Ok((value.clone(), Tag::Literal)),
+                None => Ok((DataType::Null, Tag::Literal)),
+            };
+        }
+
+        if let DataType::Boolean(key) = index {
+            return match object.get(&ObjectKey::Boolean(key)) {
+                Some(value) => Ok((value.clone(), Tag::Literal)),
+                None => Ok((DataType::Null, Tag::Literal)),
+            };
         }
     }
 
-    pub fn execute(program: Program, env: Rc<RefCell<Environment>>) -> Result<DataType> {
-        let mut result = DataType::UNDEFINED;
+    // TODO: replace panic with propagated error
+    panic!("index type mismatch");
+}
 
-        for statement in program.statements {
-            result = Evaluator::eval_statement(statement, Rc::clone(&env))?;
+fn boolean(expr: BooleanExpression) -> Result<Tagged<DataType>> {
+    Ok((DataType::Boolean(Boolean::new(expr.value)), Tag::Literal))
+}
 
-            if let DataType::RETURN(_) = result {
-                return Ok(result);
-            }
-        }
+fn int(expr: IntExpression) -> Result<Tagged<DataType>> {
+    Ok((DataType::Integer(Integer::new(expr.value)), Tag::Literal))
+}
 
-        Ok(result)
+fn string(expr: StringExpression) -> Result<Tagged<DataType>> {
+    Ok((DataType::String(String::new(expr.value)), Tag::Literal))
+}
+
+fn identifier(
+    expr: IdentifierExpression,
+    env: Rc<RefCell<Environment>>,
+) -> Result<Tagged<DataType>> {
+    match env.borrow().get(&expr.value) {
+        Some(value) => Ok((value, Tag::Identifier)),
+        // TODO: replace panic with propagated error
+        None => panic!("unknown identifier {}", expr.value),
     }
+}
+
+fn prefix(expr: PrefixExpression, env: Rc<RefCell<Environment>>) -> Result<Tagged<DataType>> {
+    let operator = expr.operator;
+    let right = expression(*expr.right, Rc::clone(&env))?.0;
+
+    if let DataType::Integer(value) = right {
+        return Ok((
+            match operator {
+                Token::BANG => DataType::Boolean(Boolean::new(*value == 0)),
+                Token::MINUS => DataType::Integer(Integer::new(-*value)),
+                // TODO: replace panic with propagated error
+                _ => panic!("unknown operator {}", operator),
+            },
+            Tag::Literal,
+        ));
+    }
+
+    if let DataType::Boolean(value) = right {
+        return Ok((
+            match operator {
+                Token::BANG => DataType::Boolean(Boolean::new(!*value)),
+                // TODO: replace panic with propagated error
+                _ => panic!("unknown operator {}", operator),
+            },
+            Tag::Literal,
+        ));
+    }
+
+    // TODO: replace panic with propagated error
+    panic!("unknown operator {}", operator)
+}
+
+fn infix(expr: InfixExpression, env: Rc<RefCell<Environment>>) -> Result<Tagged<DataType>> {
+    let operator = expr.operator;
+    let left = expression(*expr.left, Rc::clone(&env))?.0;
+    let right = expression(*expr.right, Rc::clone(&env))?.0;
+
+    if let (DataType::Integer(left), DataType::Integer(right)) = (&left, &right) {
+        let left = **left;
+        let right = **right;
+
+        return Ok((
+            match operator {
+                Token::PLUS => DataType::Integer(Integer::new(left + right)),
+                Token::MINUS => DataType::Integer(Integer::new(left - right)),
+                Token::ASTERISK => DataType::Integer(Integer::new(left * right)),
+                Token::SLASH => DataType::Integer(Integer::new(left / right)),
+                Token::LT => DataType::Boolean(Boolean::new(left < right)),
+                Token::GT => DataType::Boolean(Boolean::new(left > right)),
+                Token::LTE => DataType::Boolean(Boolean::new(left <= right)),
+                Token::GTE => DataType::Boolean(Boolean::new(left >= right)),
+                Token::EQ => DataType::Boolean(Boolean::new(left == right)),
+                Token::NEQ => DataType::Boolean(Boolean::new(left != right)),
+                // TODO: replace panic with propagated error
+                _ => panic!("unknown operator {}", operator),
+            },
+            Tag::Literal,
+        ));
+    }
+
+    if let (DataType::Boolean(left), DataType::Boolean(right)) = (&left, &right) {
+        let left = **left;
+        let right = **right;
+
+        return Ok((
+            match operator {
+                Token::EQ => DataType::Boolean(Boolean::new(left == right)),
+                Token::NEQ => DataType::Boolean(Boolean::new(left != right)),
+                // TODO: replace panic with propagated error
+                _ => panic!("unknown operator {}", operator),
+            },
+            Tag::Literal,
+        ));
+    }
+
+    if let (DataType::String(left), DataType::String(right)) = (&left, &right) {
+        if operator == Token::PLUS {
+            return Ok((
+                DataType::String(String::new(format!("{}{}", left, right).into())),
+                Tag::Literal,
+            ));
+        }
+    }
+
+    // TODO: replace panic with propagated error
+    panic!("unknown operator {}", operator)
 }
 
 #[cfg(test)]
 mod tests {
     use std::vec;
 
-    use crate::{Lexer, Parser};
-
     use super::*;
+    use crate::{lexer, parser};
 
     #[test]
     fn test_eval_integer_expressions() {
@@ -327,14 +366,12 @@ mod tests {
         ];
 
         for (input, expected) in tests {
-            let lexer = Lexer::new(input);
-            let mut parser = Parser::new(lexer);
-
-            let program = parser.parse().unwrap();
+            let tokens = lexer::parse(input).unwrap();
+            let program = parser::parse(tokens).unwrap();
             let env = Rc::new(RefCell::new(Environment::new(None)));
 
-            match Evaluator::execute(program, env) {
-                Ok(DataType::INT(value)) => assert_eq!(value, expected),
+            match execute(program, env) {
+                Ok(DataType::Integer(value)) => assert_eq!(*value, expected),
                 _ => panic!("expected an integer, got something else"),
             }
         }
@@ -345,14 +382,12 @@ mod tests {
         let tests = vec![("\"hello world\";", "hello world")];
 
         for (input, expected) in tests {
-            let lexer = Lexer::new(input);
-            let mut parser = Parser::new(lexer);
-
-            let program = parser.parse().unwrap();
+            let tokens = lexer::parse(input).unwrap();
+            let program = parser::parse(tokens).unwrap();
             let env = Rc::new(RefCell::new(Environment::new(None)));
 
-            match Evaluator::execute(program, env) {
-                Ok(DataType::STRING(value)) => assert_eq!(value, expected.into()),
+            match execute(program, env) {
+                Ok(DataType::String(value)) => assert_eq!(&value[..], expected),
                 _ => panic!("expected a string, got something else"),
             }
         }
@@ -363,14 +398,12 @@ mod tests {
         let tests = vec![(r#""hello" + ", " + "world!";"#, "hello, world!")];
 
         for (input, expected) in tests {
-            let lexer = Lexer::new(input);
-            let mut parser = Parser::new(lexer);
-
-            let program = parser.parse().unwrap();
+            let tokens = lexer::parse(input).unwrap();
+            let program = parser::parse(tokens).unwrap();
             let env = Rc::new(RefCell::new(Environment::new(None)));
 
-            match Evaluator::execute(program, env) {
-                Ok(DataType::STRING(value)) => assert_eq!(value, expected.into()),
+            match execute(program, env) {
+                Ok(DataType::String(value)) => assert_eq!(&value[..], expected),
                 _ => panic!("expected a string, got something else"),
             }
         }
@@ -417,14 +450,12 @@ mod tests {
         ];
 
         for (input, expected) in tests {
-            let lexer = Lexer::new(input);
-            let mut parser = Parser::new(lexer);
-
-            let program = parser.parse().unwrap();
+            let tokens = lexer::parse(input).unwrap();
+            let program = parser::parse(tokens).unwrap();
             let env = Rc::new(RefCell::new(Environment::new(None)));
 
-            match Evaluator::execute(program, env) {
-                Ok(DataType::BOOLEAN(value)) => assert_eq!(value, expected),
+            match execute(program, env) {
+                Ok(DataType::Boolean(value)) => assert_eq!(*value, expected),
                 _ => panic!("expected a boolean, got something else"),
             }
         }
@@ -439,19 +470,17 @@ mod tests {
         ];
 
         for (input, expected) in tests {
-            let lexer = Lexer::new(input);
-            let mut parser = Parser::new(lexer);
-
-            let program = parser.parse().unwrap();
+            let tokens = lexer::parse(input).unwrap();
+            let program = parser::parse(tokens).unwrap();
             let env = Rc::new(RefCell::new(Environment::new(None)));
 
-            match Evaluator::execute(program, env) {
-                Ok(DataType::ARRAY(value)) => {
+            match execute(program, env) {
+                Ok(DataType::Array(value)) => {
                     assert_eq!(
                         value
                             .iter()
                             .map(|element| match element {
-                                DataType::INT(value) => *value,
+                                DataType::Integer(value) => **value,
                                 _ => panic!("expected an integer, got something else"),
                             })
                             .collect::<Vec<i64>>(),
@@ -479,15 +508,13 @@ mod tests {
         ];
 
         for (input, expected) in tests {
-            let lexer = Lexer::new(input);
-            let mut parser = Parser::new(lexer);
-
-            let program = parser.parse().unwrap();
+            let tokens = lexer::parse(input).unwrap();
+            let program = parser::parse(tokens).unwrap();
             let env = Rc::new(RefCell::new(Environment::new(None)));
 
-            match Evaluator::execute(program, env) {
-                Ok(DataType::INT(value)) => assert_eq!(value, expected),
-                Ok(DataType::NULL) => assert_eq!(0, expected),
+            match execute(program, env) {
+                Ok(DataType::Integer(value)) => assert_eq!(*value, expected),
+                Ok(DataType::Null) => assert_eq!(0, expected),
                 _ => panic!("expected an integer, got something else"),
             }
         }
@@ -506,15 +533,13 @@ mod tests {
         ];
 
         for (input, expected) in tests {
-            let lexer = Lexer::new(input);
-            let mut parser = Parser::new(lexer);
-
-            let program = parser.parse().unwrap();
+            let tokens = lexer::parse(input).unwrap();
+            let program = parser::parse(tokens).unwrap();
             let env = Rc::new(RefCell::new(Environment::new(None)));
 
-            match Evaluator::execute(program, env) {
-                Ok(DataType::INT(value)) => assert_eq!(value, expected),
-                Ok(DataType::UNDEFINED) => assert_eq!(expected, 0),
+            match execute(program, env) {
+                Ok(DataType::Integer(value)) => assert_eq!(*value, expected),
+                Ok(DataType::Undefined) => assert_eq!(expected, 0),
                 _ => panic!("expected an integer, got something else"),
             }
         }
@@ -540,59 +565,13 @@ mod tests {
         ];
 
         for (input, expected) in tests {
-            let lexer = Lexer::new(input);
-            let mut parser = Parser::new(lexer);
-
-            let program = parser.parse().unwrap();
+            let tokens = lexer::parse(input).unwrap();
+            let program = parser::parse(tokens).unwrap();
             let env = Rc::new(RefCell::new(Environment::new(None)));
 
-            match Evaluator::execute(program, env) {
-                Ok(DataType::RETURN(value)) => match *value {
-                    DataType::INT(value) => assert_eq!(value, expected),
-                    _ => panic!("expected an integer, got something else"),
-                },
+            match execute(program, env) {
+                Ok(DataType::Integer(value)) => assert_eq!(*value, expected),
                 _ => panic!("expected a return statement, got something else"),
-            }
-        }
-    }
-
-    #[test]
-    fn test_eval_error_handling() {
-        let tests = vec![
-            ("5 + true;", "type mismatch INT(5) + BOOLEAN(true) at 1:3"),
-            (
-                "5 + true; 5;",
-                "type mismatch INT(5) + BOOLEAN(true) at 1:3",
-            ),
-            ("-true;", "unknown operator - at 1:1"),
-            ("true + false;", "unknown operator + at 1:6"),
-            ("5; true + false; 5;", "unknown operator + at 1:9"),
-            (
-                "if (10 > 1) { true + false; };",
-                "unknown operator + at 1:20",
-            ),
-            (
-                "if (10 > 1) {
-                    if (10 > 1) {
-                        return true + false;
-                    };
-
-                    return 1;
-                };",
-                "unknown operator + at 3:37",
-            ),
-        ];
-
-        for (input, expected) in tests {
-            let lexer = Lexer::new(input);
-            let mut parser = Parser::new(lexer);
-
-            let program = parser.parse().unwrap();
-            let env = Rc::new(RefCell::new(Environment::new(None)));
-
-            match Evaluator::execute(program, env) {
-                Err(error) => assert_eq!(error.to_string(), expected),
-                _ => panic!("expected an error, got something else"),
             }
         }
     }
@@ -607,14 +586,12 @@ mod tests {
         ];
 
         for (input, expected) in tests {
-            let lexer = Lexer::new(input);
-            let mut parser = Parser::new(lexer);
-
-            let program = parser.parse().unwrap();
+            let tokens = lexer::parse(input).unwrap();
+            let program = parser::parse(tokens).unwrap();
             let env = Rc::new(RefCell::new(Environment::new(None)));
 
-            match Evaluator::execute(program, env) {
-                Ok(DataType::INT(value)) => assert_eq!(value, expected),
+            match execute(program, env) {
+                Ok(DataType::Integer(value)) => assert_eq!(*value, expected),
                 _ => panic!("expected an integer, got something else"),
             }
         }
@@ -624,18 +601,16 @@ mod tests {
     fn test_eval_function_expressions() {
         let input = "fn(x) { x + 2; };";
 
-        let lexer = Lexer::new(input);
-        let mut parser = Parser::new(lexer);
-
-        let program = parser.parse().unwrap();
+        let tokens = lexer::parse(input).unwrap();
+        let program = parser::parse(tokens).unwrap();
         let env = Rc::new(RefCell::new(Environment::new(None)));
 
-        match Evaluator::execute(program, env) {
-            Ok(DataType::FUNCTION {
+        match execute(program, env) {
+            Ok(DataType::Function(Function::Normal {
                 parameters, body, ..
-            }) => {
+            })) => {
                 assert_eq!(parameters.len(), 1);
-                assert_eq!(parameters.first().unwrap().value, "x".into());
+                assert_eq!(&**parameters.first().unwrap(), "x");
 
                 assert_eq!(body.statements.len(), 1);
                 assert_eq!(body.statements.first().unwrap().to_string(), "(x + 2);");
@@ -645,33 +620,32 @@ mod tests {
     }
 
     #[test]
-    fn test_eval_hash_expressions() {
+    fn test_eval_object_expressions() {
         let inputs = vec![
             (
                 r#"{ "one": 1, "two": 2, "three": 3 }["one"];"#,
-                DataType::INT(1),
+                DataType::Integer(Integer::new(1)),
             ),
             (
                 r#"{ "one": 1, "two": 2, "three": 3 }["two"];"#,
-                DataType::INT(2),
+                DataType::Integer(Integer::new(2)),
             ),
             (
                 r#"{ "one": 1, "two": 2, "three": 3 }["three"];"#,
-                DataType::INT(3),
+                DataType::Integer(Integer::new(3)),
             ),
             (
                 r#"{ "one": 1, "two": 2, "three": 3 }["four"];"#,
-                DataType::NULL,
+                DataType::Null,
             ),
         ];
 
         for (input, expected) in inputs {
-            let lexer = Lexer::new(input);
-            let mut parser = Parser::new(lexer);
-            let program = parser.parse().unwrap();
+            let tokens = lexer::parse(input).unwrap();
+            let program = parser::parse(tokens).unwrap();
             let env = Rc::new(RefCell::new(Environment::new(None)));
 
-            let result = Evaluator::execute(program, Rc::clone(&env)).unwrap();
+            let result = execute(program, Rc::clone(&env)).unwrap();
 
             assert_eq!(result, expected);
         }
@@ -689,18 +663,12 @@ mod tests {
         ];
 
         for (input, expected) in tests {
-            let lexer = Lexer::new(input);
-            let mut parser = Parser::new(lexer);
-
-            let program = parser.parse().unwrap();
+            let tokens = lexer::parse(input).unwrap();
+            let program = parser::parse(tokens).unwrap();
             let env = Rc::new(RefCell::new(Environment::new(None)));
 
-            match Evaluator::execute(program, env) {
-                Ok(DataType::INT(value)) => assert_eq!(value, expected),
-                Ok(DataType::RETURN(value)) => match *value {
-                    DataType::INT(value) => assert_eq!(value, expected),
-                    _ => panic!("expected an integer, got something else"),
-                },
+            match execute(program, env) {
+                Ok(DataType::Integer(value)) => assert_eq!(*value, expected),
                 _ => panic!("expected an integer, got something else"),
             }
         }
@@ -711,14 +679,12 @@ mod tests {
         let input =
             "let new_adder = fn(x) { fn(y) { x + y; }; }; let add_two = new_adder(2); add_two(2);";
 
-        let lexer = Lexer::new(input);
-        let mut parser = Parser::new(lexer);
-
-        let program = parser.parse().unwrap();
+        let tokens = lexer::parse(input).unwrap();
+        let program = parser::parse(tokens).unwrap();
         let env = Rc::new(RefCell::new(Environment::new(None)));
 
-        match Evaluator::execute(program, env) {
-            Ok(DataType::INT(value)) => assert_eq!(value, 4),
+        match execute(program, env) {
+            Ok(DataType::Integer(value)) => assert_eq!(*value, 4),
             _ => panic!("expected an integer, got something else"),
         }
     }
@@ -728,14 +694,12 @@ mod tests {
         let tests = vec![(r#"len("");"#, 0), (r#"len("hello, world!");"#, 13)];
 
         for (input, expected) in tests {
-            let lexer = Lexer::new(input);
-            let mut parser = Parser::new(lexer);
-
-            let program = parser.parse().unwrap();
+            let tokens = lexer::parse(input).unwrap();
+            let program = parser::parse(tokens).unwrap();
             let env = Rc::new(RefCell::new(Environment::new(None)));
 
-            match Evaluator::execute(program, env) {
-                Ok(DataType::INT(value)) => assert_eq!(value, expected),
+            match execute(program, env) {
+                Ok(DataType::Integer(value)) => assert_eq!(*value, expected),
                 _ => panic!("expected an integer, got something else"),
             }
         }
@@ -743,7 +707,7 @@ mod tests {
         let test_errors = vec![
             (
                 "len(1);",
-                r#"argument[0] passed to BUILTIN("len") is not supported. got=INT(1), want=STRING|ARRAY"#,
+                r#"argument[0] passed to BUILTIN("len") is not supported. got=1, want=STRING|ARRAY"#,
             ),
             (
                 r#"len("one", "two");"#,
@@ -752,13 +716,11 @@ mod tests {
         ];
 
         for (input, expected) in test_errors {
-            let lexer = Lexer::new(input);
-            let mut parser = Parser::new(lexer);
-
-            let program = parser.parse().unwrap();
+            let tokens = lexer::parse(input).unwrap();
+            let program = parser::parse(tokens).unwrap();
             let env = Rc::new(RefCell::new(Environment::new(None)));
 
-            match Evaluator::execute(program, env) {
+            match execute(program, env) {
                 Err(error) => assert_eq!(error.to_string(), expected),
                 _ => panic!("expected an error, got something else"),
             }
@@ -776,15 +738,13 @@ mod tests {
         ];
 
         for (input, expected) in tests {
-            let lexer = Lexer::new(input);
-            let mut parser = Parser::new(lexer);
-
-            let program = parser.parse().unwrap();
+            let tokens = lexer::parse(input).unwrap();
+            let program = parser::parse(tokens).unwrap();
             let env = Rc::new(RefCell::new(Environment::new(None)));
 
-            match Evaluator::execute(program, env) {
-                Ok(DataType::INT(value)) => assert_eq!(value, expected),
-                Ok(DataType::NULL) => assert_eq!(0, expected),
+            match execute(program, env) {
+                Ok(DataType::Integer(value)) => assert_eq!(*value, expected),
+                Ok(DataType::Null) => assert_eq!(0, expected),
                 _ => panic!("expected an integer, got something else"),
             }
         }
@@ -792,7 +752,7 @@ mod tests {
         let test_errors = vec![
             (
                 "first(1);",
-                r#"argument[0] passed to BUILTIN("first") is not supported. got=INT(1), want=ARRAY"#,
+                r#"argument[0] passed to BUILTIN("first") is not supported. got=1, want=ARRAY"#,
             ),
             (
                 r#"first([1], [2]);"#,
@@ -801,13 +761,11 @@ mod tests {
         ];
 
         for (input, expected) in test_errors {
-            let lexer = Lexer::new(input);
-            let mut parser = Parser::new(lexer);
-
-            let program = parser.parse().unwrap();
+            let tokens = lexer::parse(input).unwrap();
+            let program = parser::parse(tokens).unwrap();
             let env = Rc::new(RefCell::new(Environment::new(None)));
 
-            match Evaluator::execute(program, env) {
+            match execute(program, env) {
                 Err(error) => assert_eq!(error.to_string(), expected),
                 _ => panic!("expected an error, got something else"),
             }
@@ -825,15 +783,13 @@ mod tests {
         ];
 
         for (input, expected) in tests {
-            let lexer = Lexer::new(input);
-            let mut parser = Parser::new(lexer);
-
-            let program = parser.parse().unwrap();
+            let tokens = lexer::parse(input).unwrap();
+            let program = parser::parse(tokens).unwrap();
             let env = Rc::new(RefCell::new(Environment::new(None)));
 
-            match Evaluator::execute(program, env) {
-                Ok(DataType::INT(value)) => assert_eq!(value, expected),
-                Ok(DataType::NULL) => assert_eq!(0, expected),
+            match execute(program, env) {
+                Ok(DataType::Integer(value)) => assert_eq!(*value, expected),
+                Ok(DataType::Null) => assert_eq!(0, expected),
                 _ => panic!("expected an integer, got something else"),
             }
         }
@@ -841,7 +797,7 @@ mod tests {
         let test_errors = vec![
             (
                 "last(1);",
-                r#"argument[0] passed to BUILTIN("last") is not supported. got=INT(1), want=ARRAY"#,
+                r#"argument[0] passed to BUILTIN("last") is not supported. got=1, want=ARRAY"#,
             ),
             (
                 r#"last([1], [2]);"#,
@@ -850,13 +806,11 @@ mod tests {
         ];
 
         for (input, expected) in test_errors {
-            let lexer = Lexer::new(input);
-            let mut parser = Parser::new(lexer);
-
-            let program = parser.parse().unwrap();
+            let tokens = lexer::parse(input).unwrap();
+            let program = parser::parse(tokens).unwrap();
             let env = Rc::new(RefCell::new(Environment::new(None)));
 
-            match Evaluator::execute(program, env) {
+            match execute(program, env) {
                 Err(error) => assert_eq!(error.to_string(), expected),
                 _ => panic!("expected an error, got something else"),
             }
@@ -874,26 +828,24 @@ mod tests {
         ];
 
         for (input, expected) in tests {
-            let lexer = Lexer::new(input);
-            let mut parser = Parser::new(lexer);
-
-            let program = parser.parse().unwrap();
+            let tokens = lexer::parse(input).unwrap();
+            let program = parser::parse(tokens).unwrap();
             let env = Rc::new(RefCell::new(Environment::new(None)));
 
-            match Evaluator::execute(program, env) {
-                Ok(DataType::ARRAY(value)) => {
+            match execute(program, env) {
+                Ok(DataType::Array(value)) => {
                     assert_eq!(
                         value
                             .iter()
                             .map(|element| match element {
-                                DataType::INT(value) => *value,
+                                DataType::Integer(value) => **value,
                                 _ => panic!("expected an integer, got something else"),
                             })
                             .collect::<Vec<i64>>(),
                         expected
                     );
                 }
-                Ok(DataType::NULL) => assert_eq!(0, expected.len()),
+                Ok(DataType::Null) => assert_eq!(0, expected.len()),
                 _ => panic!("expected an array, got something else"),
             }
         }
@@ -901,7 +853,7 @@ mod tests {
         let test_errors = vec![
             (
                 "rest(1);",
-                r#"argument[0] passed to BUILTIN("rest") is not supported. got=INT(1), want=ARRAY"#,
+                r#"argument[0] passed to BUILTIN("rest") is not supported. got=1, want=ARRAY"#,
             ),
             (
                 r#"rest([1], [2]);"#,
@@ -910,13 +862,11 @@ mod tests {
         ];
 
         for (input, expected) in test_errors {
-            let lexer = Lexer::new(input);
-            let mut parser = Parser::new(lexer);
-
-            let program = parser.parse().unwrap();
+            let tokens = lexer::parse(input).unwrap();
+            let program = parser::parse(tokens).unwrap();
             let env = Rc::new(RefCell::new(Environment::new(None)));
 
-            match Evaluator::execute(program, env) {
+            match execute(program, env) {
                 Err(error) => assert_eq!(error.to_string(), expected),
                 _ => panic!("expected an error, got something else"),
             }
@@ -933,19 +883,17 @@ mod tests {
         ];
 
         for (input, expected) in tests {
-            let lexer = Lexer::new(input);
-            let mut parser = Parser::new(lexer);
-
-            let program = parser.parse().unwrap();
+            let tokens = lexer::parse(input).unwrap();
+            let program = parser::parse(tokens).unwrap();
             let env = Rc::new(RefCell::new(Environment::new(None)));
 
-            match Evaluator::execute(program, env) {
-                Ok(DataType::ARRAY(value)) => {
+            match execute(program, env) {
+                Ok(DataType::Array(value)) => {
                     assert_eq!(
                         value
                             .iter()
                             .map(|element| match element {
-                                DataType::INT(value) => *value,
+                                DataType::Integer(value) => **value,
                                 _ => panic!("expected an integer, got something else"),
                             })
                             .collect::<Vec<i64>>(),
@@ -959,7 +907,7 @@ mod tests {
         let test_errors = vec![
             (
                 "push(1, 1);",
-                r#"argument[0] passed to BUILTIN("push") is not supported. got=INT(1), want=ARRAY"#,
+                r#"argument[0] passed to BUILTIN("push") is not supported. got=1, want=ARRAY"#,
             ),
             (
                 "push([1]);",
@@ -968,13 +916,11 @@ mod tests {
         ];
 
         for (input, expected) in test_errors {
-            let lexer = Lexer::new(input);
-            let mut parser = Parser::new(lexer);
-
-            let program = parser.parse().unwrap();
+            let tokens = lexer::parse(input).unwrap();
+            let program = parser::parse(tokens).unwrap();
             let env = Rc::new(RefCell::new(Environment::new(None)));
 
-            match Evaluator::execute(program, env) {
+            match execute(program, env) {
                 Err(error) => assert_eq!(error.to_string(), expected),
                 _ => panic!("expected an error, got something else"),
             }
