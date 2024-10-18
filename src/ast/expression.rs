@@ -1,9 +1,48 @@
-use super::{Statement, Token};
 use std::fmt::Display;
+
+use internment::Intern;
+
+use super::{Statement, Token};
+
+#[derive(Debug, PartialEq, Clone)]
+pub enum Expression {
+    Block(BlockExpression),
+    Array(ArrayExpression),
+    Object(ObjectExpression),
+    Function(FunctionExpression),
+    If(IfExpression),
+    Call(CallExpression),
+    Index(IndexExpression),
+    Int(IntExpression),
+    String(StringExpression),
+    Boolean(BooleanExpression),
+    Identifier(IdentifierExpression),
+    Prefix(PrefixExpression),
+    Infix(InfixExpression),
+}
+
+impl Display for Expression {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Expression::Block(expression) => write!(f, "{}", expression),
+            Expression::Array(expression) => write!(f, "{}", expression),
+            Expression::Object(expression) => write!(f, "{}", expression),
+            Expression::Function(expression) => write!(f, "{}", expression),
+            Expression::If(expression) => write!(f, "{}", expression),
+            Expression::Call(expression) => write!(f, "{}", expression),
+            Expression::Index(expression) => write!(f, "{}", expression),
+            Expression::Int(expression) => write!(f, "{}", expression),
+            Expression::String(expression) => write!(f, "{}", expression),
+            Expression::Boolean(expression) => write!(f, "{}", expression),
+            Expression::Identifier(expression) => write!(f, "{}", expression),
+            Expression::Prefix(expression) => write!(f, "{}", expression),
+            Expression::Infix(expression) => write!(f, "{}", expression),
+        }
+    }
+}
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct BlockExpression {
-    pub token: Token,
     pub statements: Vec<Statement>,
 }
 
@@ -28,56 +67,7 @@ impl Display for BlockExpression {
 }
 
 #[derive(Debug, PartialEq, Clone)]
-pub struct IdentExpression {
-    pub token: Token,
-    pub value: Box<str>,
-}
-
-impl Display for IdentExpression {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.value)
-    }
-}
-
-#[derive(Debug, PartialEq, Clone)]
-pub struct IntExpression {
-    pub token: Token,
-    pub value: i64,
-}
-
-impl Display for IntExpression {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.value)
-    }
-}
-
-#[derive(Debug, PartialEq, Clone)]
-pub struct StringExpression {
-    pub token: Token,
-    pub value: Box<str>,
-}
-
-impl Display for StringExpression {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.value)
-    }
-}
-
-#[derive(Debug, PartialEq, Clone)]
-pub struct BooleanExpression {
-    pub token: Token,
-    pub value: bool,
-}
-
-impl Display for BooleanExpression {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.value)
-    }
-}
-
-#[derive(Debug, PartialEq, Clone)]
 pub struct ArrayExpression {
-    pub token: Token,
     pub elements: Vec<Expression>,
 }
 
@@ -102,24 +92,56 @@ impl Display for ArrayExpression {
 }
 
 #[derive(Debug, PartialEq, Clone)]
-pub struct IndexExpression {
-    pub token: Token,
-    pub left: Box<Expression>,
-    pub index: Box<Expression>,
+pub struct ObjectExpression {
+    pub pairs: Vec<(Expression, Expression)>,
 }
 
-impl Display for IndexExpression {
+impl Display for ObjectExpression {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "({}[{}])", self.left, self.index)
+        let mut output = String::new();
+
+        let mut pairs = String::new();
+
+        for (i, (key, value)) in self.pairs.iter().enumerate() {
+            pairs.push_str(&format!("{}: {}", key, value));
+
+            if i < self.pairs.len() - 1 {
+                pairs.push_str(", ");
+            }
+        }
+
+        output.push_str(&format!("{{{}}}", pairs));
+
+        write!(f, "{}", output)
+    }
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub struct FunctionExpression {
+    pub parameters: Vec<IdentifierExpression>,
+    pub body: Box<BlockExpression>,
+}
+
+impl Display for FunctionExpression {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut output = String::new();
+
+        let parameters: Vec<String> = self
+            .parameters
+            .iter()
+            .map(|param| format!("{}", param))
+            .collect();
+        output.push_str(&format!("fn({}) ", parameters.join(", ")));
+        output.push_str(&format!("{}", self.body));
+        write!(f, "{}", output)
     }
 }
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct IfExpression {
-    pub token: Token,
     pub condition: Box<Expression>,
-    pub consequence: BlockExpression,
-    pub alternative: Option<BlockExpression>,
+    pub consequence: Box<BlockExpression>,
+    pub alternative: Option<Box<BlockExpression>>,
 }
 
 impl Display for IfExpression {
@@ -137,63 +159,8 @@ impl Display for IfExpression {
 }
 
 #[derive(Debug, PartialEq, Clone)]
-pub struct FunctionExpression {
-    pub token: Token,
-    pub parameters: Vec<IdentExpression>,
-    pub body: BlockExpression,
-}
-
-impl Display for FunctionExpression {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let mut output = String::new();
-
-        let mut parameters = String::new();
-
-        for (i, parameter) in self.parameters.iter().enumerate() {
-            parameters.push_str(&format!("{}", parameter));
-
-            if i < self.parameters.len() - 1 {
-                parameters.push_str(", ");
-            }
-        }
-
-        output.push_str(&format!("fn({}) {}", parameters, self.body));
-
-        write!(f, "{}", output)
-    }
-}
-
-pub type HashPair = (Box<Expression>, Box<Expression>);
-
-#[derive(Debug, PartialEq, Clone)]
-pub struct HashExpression {
-    pub token: Token,
-    pub pairs: Vec<HashPair>,
-}
-
-impl Display for HashExpression {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let mut output = String::new();
-        let mut pairs = String::new();
-
-        for (i, (key, value)) in self.pairs.iter().enumerate() {
-            pairs.push_str(&format!(" {}: {}", key, value));
-
-            if i < self.pairs.len() - 1 {
-                pairs.push_str(", ");
-            }
-        }
-
-        output.push_str(&format!("{{{}}}", pairs));
-
-        write!(f, "{}", output)
-    }
-}
-
-#[derive(Debug, PartialEq, Clone)]
 pub struct CallExpression {
-    pub token: Token,
-    pub function: Box<Expression>,
+    pub callable: Box<Expression>,
     pub arguments: Vec<Expression>,
 }
 
@@ -211,9 +178,65 @@ impl Display for CallExpression {
             }
         }
 
-        output.push_str(&format!("{}({})", self.function, arguments));
+        output.push_str(&format!("{}({})", self.callable, arguments));
 
         write!(f, "{}", output)
+    }
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub struct IndexExpression {
+    pub left: Box<Expression>,
+    pub index: Box<Expression>,
+}
+
+impl Display for IndexExpression {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "({}[{}])", self.left, self.index)
+    }
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub struct IntExpression {
+    pub value: i64,
+}
+
+impl Display for IntExpression {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.value)
+    }
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub struct StringExpression {
+    pub value: Intern<String>,
+}
+
+impl Display for StringExpression {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.value)
+    }
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub struct BooleanExpression {
+    pub value: bool,
+}
+
+impl Display for BooleanExpression {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.value)
+    }
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub struct IdentifierExpression {
+    pub value: Intern<String>,
+}
+
+impl Display for IdentifierExpression {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.value)
     }
 }
 
@@ -225,7 +248,7 @@ pub struct PrefixExpression {
 
 impl Display for PrefixExpression {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "({}{})", self.operator.literal, self.right)
+        write!(f, "({}{})", self.operator, self.right)
     }
 }
 
@@ -238,47 +261,6 @@ pub struct InfixExpression {
 
 impl Display for InfixExpression {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "({} {} {})",
-            self.left, self.operator.literal, self.right
-        )
-    }
-}
-
-#[derive(Debug, PartialEq, Clone)]
-pub enum Expression {
-    Block(BlockExpression),
-    Ident(IdentExpression),
-    Int(IntExpression),
-    String(StringExpression),
-    Boolean(BooleanExpression),
-    Array(ArrayExpression),
-    Index(IndexExpression),
-    If(IfExpression),
-    Function(FunctionExpression),
-    Hash(HashExpression),
-    Call(CallExpression),
-    Prefix(PrefixExpression),
-    Infix(InfixExpression),
-}
-
-impl Display for Expression {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Expression::Block(expression) => write!(f, "{}", expression),
-            Expression::Ident(expression) => write!(f, "{}", expression),
-            Expression::Int(expression) => write!(f, "{}", expression),
-            Expression::String(expression) => write!(f, "{}", expression),
-            Expression::Boolean(expression) => write!(f, "{}", expression),
-            Expression::Array(expression) => write!(f, "{}", expression),
-            Expression::Index(expression) => write!(f, "{}", expression),
-            Expression::If(expression) => write!(f, "{}", expression),
-            Expression::Function(expression) => write!(f, "{}", expression),
-            Expression::Hash(expression) => write!(f, "{}", expression),
-            Expression::Call(expression) => write!(f, "{}", expression),
-            Expression::Prefix(expression) => write!(f, "{}", expression),
-            Expression::Infix(expression) => write!(f, "{}", expression),
-        }
+        write!(f, "({} {} {})", self.left, self.operator, self.right)
     }
 }

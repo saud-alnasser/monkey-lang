@@ -5,13 +5,13 @@ use crate::DataType;
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     ExtraArguments {
-        builtin: &'static str,
-        expected: &'static str,
+        builtin: Box<str>,
+        expected: Box<str>,
         got: String,
     },
     NotSupportedArgument {
-        builtin: &'static str,
-        expected: &'static str,
+        builtin: Box<str>,
+        expected: Box<str>,
         position: usize,
         got: DataType,
     },
@@ -36,7 +36,7 @@ impl Display for Error {
                 got,
             } => write!(
                 f,
-                r#"argument[{}] passed to BUILTIN("{}") is not supported. got={:?}, want={}"#,
+                r#"argument[{}] passed to BUILTIN("{}") is not supported. got={}, want={}"#,
                 position, builtin, got, expected
             ),
         }

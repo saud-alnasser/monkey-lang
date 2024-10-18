@@ -4,4 +4,6 @@ version = "0.0.14"
 edition = "2021"
 
 [dependencies]
+chumsky = "=0.9.3"
+internment = "=0.8.6"
 thiserror = { version = "=1.0.64" }

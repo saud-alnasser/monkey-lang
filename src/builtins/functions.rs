@@ -1,171 +1,171 @@
 use super::error::Error;
-use crate::DataType;
+use crate::{Array, DataType, Function, Integer};
 
 /// returns the length of the given string or array
-pub const LEN: (&'static str, DataType) = (
-    "len",
-    DataType::BUILTIN {
-        func: |args| {
+pub const fn len<'a>() -> (&'a str, DataType) {
+    (
+        "len",
+        DataType::Function(Function::Native(|args| {
             if args.len() != 1 {
                 return Err(Error::ExtraArguments {
-                    builtin: "len",
-                    expected: "1",
+                    builtin: "len".into(),
+                    expected: "1".into(),
                     got: args.len().to_string(),
                 });
             }
 
             match &args[0] {
-                DataType::STRING(s) => Ok(DataType::INT(s.len() as i64)),
-                DataType::ARRAY(a) => Ok(DataType::INT(a.len() as i64)),
+                DataType::String(s) => Ok(DataType::Integer(Integer::new(s.len() as i64))),
+                DataType::Array(a) => Ok(DataType::Integer(Integer::new(a.len() as i64))),
                 _ => Err(Error::NotSupportedArgument {
-                    builtin: "len",
+                    builtin: "len".into(),
                     got: args[0].clone(),
-                    expected: "STRING|ARRAY",
+                    expected: "STRING|ARRAY".into(),
                     position: 0,
                 }),
             }
-        },
-    },
-);
+        })),
+    )
+}
 
 /// returns the first element of the given array
-pub const FIRST: (&'static str, DataType) = (
-    "first",
-    DataType::BUILTIN {
-        func: |args| {
+pub const fn first<'a>() -> (&'a str, DataType) {
+    (
+        "first",
+        DataType::Function(Function::Native(|args| {
             if args.len() != 1 {
                 return Err(Error::ExtraArguments {
-                    builtin: "first",
-                    expected: "1",
+                    builtin: "first".into(),
+                    expected: "1".into(),
                     got: args.len().to_string(),
                 });
             }
 
             match &args[0] {
-                DataType::ARRAY(array) => {
+                DataType::Array(array) => {
                     if array.is_empty() {
-                        return Ok(DataType::NULL);
+                        return Ok(DataType::Null);
                     }
 
                     Ok(array[0].clone())
                 }
                 _ => Err(Error::NotSupportedArgument {
-                    builtin: "first",
+                    builtin: "first".into(),
                     got: args[0].clone(),
-                    expected: "ARRAY",
+                    expected: "ARRAY".into(),
                     position: 0,
                 }),
             }
-        },
-    },
-);
+        })),
+    )
+}
 
 /// returns the last element of the given array
-pub const LAST: (&'static str, DataType) = (
-    "last",
-    DataType::BUILTIN {
-        func: |args| {
+pub const fn last<'a>() -> (&'a str, DataType) {
+    (
+        "last",
+        DataType::Function(Function::Native(|args| {
             if args.len() != 1 {
                 return Err(Error::ExtraArguments {
-                    builtin: "last",
-                    expected: "1",
+                    builtin: "last".into(),
+                    expected: "1".into(),
                     got: args.len().to_string(),
                 });
             }
 
             match &args[0] {
-                DataType::ARRAY(array) => {
+                DataType::Array(array) => {
                     if array.is_empty() {
-                        return Ok(DataType::NULL);
+                        return Ok(DataType::Null);
                     }
 
                     Ok(array[array.len() - 1].clone())
                 }
                 _ => Err(Error::NotSupportedArgument {
-                    builtin: "last",
+                    builtin: "last".into(),
                     got: args[0].clone(),
-                    expected: "ARRAY",
+                    expected: "ARRAY".into(),
                     position: 0,
                 }),
             }
-        },
-    },
-);
+        })),
+    )
+}
 
 /// returns all elements except the first of the given array
-pub const REST: (&'static str, DataType) = (
-    "rest",
-    DataType::BUILTIN {
-        func: |args| {
+pub const fn rest<'a>() -> (&'a str, DataType) {
+    (
+        "rest",
+        DataType::Function(Function::Native(|args| {
             if args.len() != 1 {
                 return Err(Error::ExtraArguments {
-                    builtin: "rest",
-                    expected: "1",
+                    builtin: "rest".into(),
+                    expected: "1".into(),
                     got: args.len().to_string(),
                 });
             }
 
             match &args[0] {
-                DataType::ARRAY(array) => {
+                DataType::Array(array) => {
                     if array.is_empty() {
-                        return Ok(DataType::ARRAY(vec![]));
+                        return Ok(DataType::Array(Array::default()));
                     }
 
-                    Ok(DataType::ARRAY(array[1..].to_vec()))
+                    Ok(DataType::Array(Array::new(array[1..].to_vec())))
                 }
                 _ => Err(Error::NotSupportedArgument {
-                    builtin: "rest",
+                    builtin: "rest".into(),
                     got: args[0].clone(),
-                    expected: "ARRAY",
+                    expected: "ARRAY".into(),
                     position: 0,
                 }),
             }
-        },
-    },
-);
+        })),
+    )
+}
 
 /// appends an element to the end of the given array
-pub const PUSH: (&'static str, DataType) = (
-    "push",
-    DataType::BUILTIN {
-        func: |args| {
+pub const fn push<'a>() -> (&'a str, DataType) {
+    (
+        "push",
+        DataType::Function(Function::Native(|args| {
             if args.len() != 2 {
                 return Err(Error::ExtraArguments {
-                    builtin: "push",
-                    expected: "2",
+                    builtin: "push".into(),
+                    expected: "2".into(),
                     got: args.len().to_string(),
                 });
             }
 
             match &args[0] {
-                DataType::ARRAY(array) => {
-                    let mut new_array = array.clone();
+                DataType::Array(array) => {
+                    let mut array = array.clone();
 
-                    new_array.push(args[1].clone());
+                    array.push(args[1].clone());
 
-                    Ok(DataType::ARRAY(new_array))
+                    Ok(DataType::Array(array))
                 }
                 _ => Err(Error::NotSupportedArgument {
-                    builtin: "push",
+                    builtin: "push".into(),
                     got: args[0].clone(),
-                    expected: "ARRAY",
+                    expected: "ARRAY".into(),
                     position: 0,
                 }),
             }
-        },
-    },
-);
+        })),
+    )
+}
 
 /// prints the given value to the standard output
-pub const PUTS: (&'static str, DataType) = (
-    "puts",
-    DataType::BUILTIN {
-        func: |args| {
+pub const fn puts<'a>() -> (&'a str, DataType) {
+    (
+        "puts",
+        DataType::Function(Function::Native(|args| {
             for arg in args {
                 println!("{}", arg);
             }
 
-            Ok(DataType::UNDEFINED)
-        },
-    },
-);
+            Ok(DataType::Undefined)
+        })),
+    )
+}
