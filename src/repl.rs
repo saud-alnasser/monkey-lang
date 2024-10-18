@@ -51,11 +51,11 @@ impl REPL {
                         Err(error) => eprintln!("error: {}", error),
                     },
                     Err(error) => {
-                        eprintln!("error: {}", error);
+                        eprintln!("error: {}", error[0]);
                     }
                 },
                 Err(error) => {
-                    eprintln!("error: {}", error);
+                    eprintln!("error: {}", error[0]);
                 }
             };
 

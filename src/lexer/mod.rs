@@ -1,6 +1,8 @@
+pub mod error;
+
 use crate::{
     ast::{Spanned, Token},
-    error::{Error, Result},
+    lexer::error::{Error, Result},
 };
 use chumsky::{prelude::*, Parser};
 
@@ -8,36 +10,41 @@ pub fn parse(input: &str) -> Result<Vec<Spanned<Token>>> {
     symbols()
         .or(keywords())
         .or(literals())
+        .or(any().map(Token::ILLEGAL))
         .map_with_span(Spanned::new)
         .padded()
         .repeated()
         .collect()
         .parse(input)
-        .map_err(|error| Error::Lexer(error[0].clone()))
+        .map_err(|errors| errors.into_iter().map(Error::from).collect())
 }
 
 fn symbols() -> impl Parser<char, Token, Error = Simple<char>> + Clone {
-    let assign = just('=').to(Token::ASSIGN);
-    let minus = just('-').to(Token::MINUS);
-    let plus = just('+').to(Token::PLUS);
-    let asterisk = just('*').to(Token::ASTERISK);
-    let slash = just('/').to(Token::SLASH);
-    let bang = just('!').to(Token::BANG);
-    let gt = just('>').to(Token::GT);
-    let lt = just('<').to(Token::LT);
-    let eq = just("==").to(Token::EQ);
-    let neq = just("!=").to(Token::NEQ);
-    let lte = just("<=").to(Token::LTE);
-    let gte = just(">=").to(Token::GTE);
-    let comma = just(',').to(Token::COMMA);
-    let colon = just(':').to(Token::COLON);
-    let semicolon = just(';').to(Token::SEMICOLON);
-    let lparen = just('(').to(Token::LPAREN);
-    let rparen = just(')').to(Token::RPAREN);
-    let lbrace = just('{').to(Token::LBRACE);
-    let rbrace = just('}').to(Token::RBRACE);
-    let lbracket = just('[').to(Token::LBRACKET);
-    let rbracket = just(']').to(Token::RBRACKET);
+    let assign = just('=').to(Token::ASSIGN).labelled("assignment operator");
+    let minus = just('-').to(Token::MINUS).labelled("minus operator");
+    let plus = just('+').to(Token::PLUS).labelled("plus operator");
+    let asterisk = just('*').to(Token::ASTERISK).labelled("asterisk operator");
+    let slash = just('/').to(Token::SLASH).labelled("slash operator");
+    let bang = just('!').to(Token::BANG).labelled("bang operator");
+    let gt = just('>').to(Token::GT).labelled("greater than operator");
+    let lt = just('<').to(Token::LT).labelled("less than operator");
+    let eq = just("==").to(Token::EQ).labelled("equal to operator");
+    let neq = just("!=").to(Token::NEQ).labelled("not equal to operator");
+    let lte = just("<=")
+        .to(Token::LTE)
+        .labelled("less than or equal to operator");
+    let gte = just(">=")
+        .to(Token::GTE)
+        .labelled("greater than or equal to operator");
+    let comma = just(',').to(Token::COMMA).labelled("comma");
+    let colon = just(':').to(Token::COLON).labelled("colon");
+    let semicolon = just(';').to(Token::SEMICOLON).labelled("semicolon");
+    let lparen = just('(').to(Token::LPAREN).labelled("left parenthesis");
+    let rparen = just(')').to(Token::RPAREN).labelled("right parenthesis");
+    let lbrace = just('{').to(Token::LBRACE).labelled("left brace");
+    let rbrace = just('}').to(Token::RBRACE).labelled("right brace");
+    let lbracket = just('[').to(Token::LBRACKET).labelled("left bracket");
+    let rbracket = just(']').to(Token::RBRACKET).labelled("right bracket");
 
     eq.or(neq)
         .or(lte)
@@ -62,13 +69,13 @@ fn symbols() -> impl Parser<char, Token, Error = Simple<char>> + Clone {
 }
 
 fn keywords() -> impl Parser<char, Token, Error = Simple<char>> + Clone {
-    let r#let = just("let").to(Token::LET);
-    let r#fn = just("fn").to(Token::FUNCTION);
-    let r#return = just("return").to(Token::RETURN);
-    let r#if = just("if").to(Token::IF);
-    let r#else = just("else").to(Token::ELSE);
-    let r#true = just("true").to(Token::TRUE);
-    let r#false = just("false").to(Token::FALSE);
+    let r#let = just("let").to(Token::LET).labelled("let keyword");
+    let r#fn = just("fn").to(Token::FUNCTION).labelled("fn keyword");
+    let r#return = just("return").to(Token::RETURN).labelled("return keyword");
+    let r#if = just("if").to(Token::IF).labelled("if keyword");
+    let r#else = just("else").to(Token::ELSE).labelled("else keyword");
+    let r#true = just("true").to(Token::TRUE).labelled("true keyword");
+    let r#false = just("false").to(Token::FALSE).labelled("false keyword");
 
     r#let
         .or(r#fn)
@@ -80,14 +87,19 @@ fn keywords() -> impl Parser<char, Token, Error = Simple<char>> + Clone {
 }
 
 fn literals() -> impl Parser<char, Token, Error = Simple<char>> + Clone {
-    let int = text::int(10).map(|value: String| Token::INT(value.into()));
+    let int = text::int(10)
+        .map(|value: String| Token::INT(value.into()))
+        .labelled("integer literal");
 
     let string = just('"')
         .ignore_then(none_of("\"").repeated().collect())
         .then_ignore(just('"'))
-        .map(|value: String| Token::STRING(value.into()));
+        .map(|value: String| Token::STRING(value.into()))
+        .labelled("string literal");
 
-    let identifier = text::ident().map(|value: String| Token::IDENTIFIER(value.into()));
+    let identifier = text::ident()
+        .map(|value: String| Token::IDENTIFIER(value.into()))
+        .labelled("identifier");
 
     int.or(string).or(identifier)
 }

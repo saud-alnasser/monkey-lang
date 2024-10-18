@@ -1,3 +1,5 @@
+pub mod error;
+
 use chumsky::{prelude::*, Parser};
 
 use crate::{
@@ -7,7 +9,7 @@ use crate::{
         IntExpression, ObjectExpression, PrefixExpression, Program, Spanned, Statement,
         StringExpression, Token,
     },
-    error::{Error, Result},
+    parser::error::{Error, Result},
 };
 
 pub fn parse(tokens: Vec<Spanned<Token>>) -> Result<Program> {
@@ -16,14 +18,14 @@ pub fn parse(tokens: Vec<Spanned<Token>>) -> Result<Program> {
         .map(|(token, _)| token)
         .collect::<Vec<Token>>();
 
-    Ok(Program {
-        statements: statement()
-            .repeated()
-            .then_ignore(end())
-            .collect()
-            .parse(tokens)
-            .map_err(|error| Error::Parser(error[0].clone()))?,
-    })
+    let statements = statement()
+        .repeated()
+        .then_ignore(end())
+        .collect()
+        .parse(tokens)
+        .map_err(|errors| errors.into_iter().map(Error::from).collect::<Vec<Error>>())?;
+
+    Ok(Program { statements })
 }
 
 fn statement() -> impl Parser<Token, Statement, Error = Simple<Token>> + Clone {

@@ -21,6 +21,26 @@ pub enum Expression {
     Infix(InfixExpression),
 }
 
+impl Expression {
+    pub fn name_of(&self) -> &'static str {
+        match self {
+            Expression::Block(_) => "BLOCK",
+            Expression::Array(_) => "ARRAY",
+            Expression::Object(_) => "OBJECT",
+            Expression::Function(_) => "FUNCTION",
+            Expression::If(_) => "IF",
+            Expression::Call(_) => "CALL",
+            Expression::Index(_) => "INDEX",
+            Expression::Int(_) => "INT",
+            Expression::String(_) => "STRING",
+            Expression::Boolean(_) => "BOOLEAN",
+            Expression::Identifier(_) => "IDENTIFIER",
+            Expression::Prefix(_) => "EXPRESSION",
+            Expression::Infix(_) => "EXPRESSION",
+        }
+    }
+}
+
 impl Display for Expression {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
