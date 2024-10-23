@@ -1,3 +1,11 @@
+## 0.0.15 (2024-10-23)
+
+### Features
+
+#### reimplement parser using the chumsky crate (#102)
+
+#### implement comprehensive error handling and propagation (#104)
+
 ## 0.0.14 (2024-09-26)
 
 ### Features
