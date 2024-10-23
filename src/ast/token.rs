@@ -4,6 +4,7 @@ use std::fmt::Display;
 #[derive(Debug, PartialEq, Eq, Hash, Clone)]
 pub enum Token {
     // special
+    ILLEGAL(char),
     WHITESPACE,
 
     // operators
@@ -51,6 +52,7 @@ pub enum Token {
 impl Display for Token {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            Token::ILLEGAL(ch) => write!(f, "{}", ch),
             Token::WHITESPACE => write!(f, ""),
             Token::ASSIGN => write!(f, "="),
             Token::PLUS => write!(f, "+"),

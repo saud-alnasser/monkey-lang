@@ -2,6 +2,8 @@ mod error;
 
 use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
+use error::Error;
+
 use self::error::Result;
 use crate::{ast::*, datatype::*, Environment};
 
@@ -77,20 +79,16 @@ fn block(expr: BlockExpression, env: Rc<RefCell<Environment>>) -> Result<Tagged<
 }
 
 fn array(expr: ArrayExpression, env: Rc<RefCell<Environment>>) -> Result<Tagged<DataType>> {
-    Ok((
-        DataType::Array(Array::new(
-            expr.elements
-                .into_iter()
-                .map(|element| {
-                    expression(element, Rc::clone(&env))
-                        // TODO: replace expected with propagated error
-                        .expect("failed to evaluate array element")
-                        .0
-                })
-                .collect(),
-        )),
-        Tag::Literal,
-    ))
+    let elements = expr
+        .elements
+        .into_iter()
+        .map(|element| expression(element, Rc::clone(&env)))
+        .collect::<Result<Vec<Tagged<DataType>>>>()?
+        .into_iter()
+        .map(|(element, _)| element)
+        .collect::<Vec<DataType>>();
+
+    Ok((DataType::Array(Array::new(elements)), Tag::Literal))
 }
 
 fn object(expr: ObjectExpression, env: Rc<RefCell<Environment>>) -> Result<Tagged<DataType>> {
@@ -102,8 +100,7 @@ fn object(expr: ObjectExpression, env: Rc<RefCell<Environment>>) -> Result<Tagge
                 Expression::String(expr) => ObjectKey::String(String::new(expr.value)),
                 Expression::Int(expr) => ObjectKey::Integer(Integer::new(expr.value)),
                 Expression::Boolean(expr) => ObjectKey::Boolean(Boolean::new(expr.value)),
-                // TODO: replace panic with propagated error
-                _ => panic!("object key type mismatch"),
+                _ => Err(Error::ObjectKeyTypeMismatch(key))?,
             },
             expression(value, Rc::clone(&env))?.0,
         );
@@ -174,8 +171,7 @@ fn call(expr: CallExpression, env: Rc<RefCell<Environment>>) -> Result<Tagged<Da
 
             return Ok((function(args)?, Tag::Literal));
         }
-        // TODO: replace panic with propagated error
-        _ => panic!("callable type mismatch"),
+        _ => Err(Error::NonCallable(callable))?,
     }
 }
 
@@ -188,13 +184,10 @@ fn index(expr: IndexExpression, env: Rc<RefCell<Environment>>) -> Result<Tagged<
             return Ok((
                 match *value < 0 || *value as usize >= array.len() {
                     true => DataType::Null,
-                    false => {
-                        array
-                            .get(*value as usize)
-                            // TODO: replace panic with propagated error
-                            .expect("failed to get array element")
-                            .clone()
-                    }
+                    false => array
+                        .get(*value as usize)
+                        .ok_or(Error::IndexOutOfBounds(*value as usize))?
+                        .clone(),
                 },
                 Tag::Literal,
             ));
@@ -224,8 +217,7 @@ fn index(expr: IndexExpression, env: Rc<RefCell<Environment>>) -> Result<Tagged<
         }
     }
 
-    // TODO: replace panic with propagated error
-    panic!("index type mismatch");
+    Err(Error::IndexTypeMismatch(index))?
 }
 
 fn boolean(expr: BooleanExpression) -> Result<Tagged<DataType>> {
@@ -246,8 +238,7 @@ fn identifier(
 ) -> Result<Tagged<DataType>> {
     match env.borrow().get(&expr.value) {
         Some(value) => Ok((value, Tag::Identifier)),
-        // TODO: replace panic with propagated error
-        None => panic!("unknown identifier {}", expr.value),
+        None => Err(Error::UndefinedIdentifier(expr.value))?,
     }
 }
 
@@ -255,31 +246,28 @@ fn prefix(expr: PrefixExpression, env: Rc<RefCell<Environment>>) -> Result<Tagge
     let operator = expr.operator;
     let right = expression(*expr.right, Rc::clone(&env))?.0;
 
-    if let DataType::Integer(value) = right {
+    if let DataType::Integer(value) = &right {
         return Ok((
             match operator {
-                Token::BANG => DataType::Boolean(Boolean::new(*value == 0)),
-                Token::MINUS => DataType::Integer(Integer::new(-*value)),
-                // TODO: replace panic with propagated error
-                _ => panic!("unknown operator {}", operator),
+                Token::BANG => DataType::Boolean(Boolean::new(**value == 0)),
+                Token::MINUS => DataType::Integer(Integer::new(-**value)),
+                _ => Err(Error::PrefixIntegerTypeMismatch(operator, right))?,
             },
             Tag::Literal,
         ));
     }
 
-    if let DataType::Boolean(value) = right {
+    if let DataType::Boolean(value) = &right {
         return Ok((
             match operator {
-                Token::BANG => DataType::Boolean(Boolean::new(!*value)),
-                // TODO: replace panic with propagated error
-                _ => panic!("unknown operator {}", operator),
+                Token::BANG => DataType::Boolean(Boolean::new(!**value)),
+                _ => Err(Error::PrefixBooleanTypeMismatch(operator, right))?,
             },
             Tag::Literal,
         ));
     }
 
-    // TODO: replace panic with propagated error
-    panic!("unknown operator {}", operator)
+    Err(Error::PrefixBooleanTypeMismatch(operator, right))?
 }
 
 fn infix(expr: InfixExpression, env: Rc<RefCell<Environment>>) -> Result<Tagged<DataType>> {
@@ -287,39 +275,37 @@ fn infix(expr: InfixExpression, env: Rc<RefCell<Environment>>) -> Result<Tagged<
     let left = expression(*expr.left, Rc::clone(&env))?.0;
     let right = expression(*expr.right, Rc::clone(&env))?.0;
 
-    if let (DataType::Integer(left), DataType::Integer(right)) = (&left, &right) {
-        let left = **left;
-        let right = **right;
+    if let (DataType::Integer(left_value), DataType::Integer(right_value)) = (&left, &right) {
+        let left_value = **left_value;
+        let right_value = **right_value;
 
         return Ok((
             match operator {
-                Token::PLUS => DataType::Integer(Integer::new(left + right)),
-                Token::MINUS => DataType::Integer(Integer::new(left - right)),
-                Token::ASTERISK => DataType::Integer(Integer::new(left * right)),
-                Token::SLASH => DataType::Integer(Integer::new(left / right)),
-                Token::LT => DataType::Boolean(Boolean::new(left < right)),
-                Token::GT => DataType::Boolean(Boolean::new(left > right)),
-                Token::LTE => DataType::Boolean(Boolean::new(left <= right)),
-                Token::GTE => DataType::Boolean(Boolean::new(left >= right)),
-                Token::EQ => DataType::Boolean(Boolean::new(left == right)),
-                Token::NEQ => DataType::Boolean(Boolean::new(left != right)),
-                // TODO: replace panic with propagated error
-                _ => panic!("unknown operator {}", operator),
+                Token::PLUS => DataType::Integer(Integer::new(left_value + right_value)),
+                Token::MINUS => DataType::Integer(Integer::new(left_value - right_value)),
+                Token::ASTERISK => DataType::Integer(Integer::new(left_value * right_value)),
+                Token::SLASH => DataType::Integer(Integer::new(left_value / right_value)),
+                Token::LT => DataType::Boolean(Boolean::new(left_value < right_value)),
+                Token::GT => DataType::Boolean(Boolean::new(left_value > right_value)),
+                Token::LTE => DataType::Boolean(Boolean::new(left_value <= right_value)),
+                Token::GTE => DataType::Boolean(Boolean::new(left_value >= right_value)),
+                Token::EQ => DataType::Boolean(Boolean::new(left_value == right_value)),
+                Token::NEQ => DataType::Boolean(Boolean::new(left_value != right_value)),
+                _ => Err(Error::InfixTypeMismatch(operator, left, right))?,
             },
             Tag::Literal,
         ));
     }
 
-    if let (DataType::Boolean(left), DataType::Boolean(right)) = (&left, &right) {
-        let left = **left;
-        let right = **right;
+    if let (DataType::Boolean(left_value), DataType::Boolean(right_value)) = (&left, &right) {
+        let left_value = **left_value;
+        let right_value = **right_value;
 
         return Ok((
             match operator {
-                Token::EQ => DataType::Boolean(Boolean::new(left == right)),
-                Token::NEQ => DataType::Boolean(Boolean::new(left != right)),
-                // TODO: replace panic with propagated error
-                _ => panic!("unknown operator {}", operator),
+                Token::EQ => DataType::Boolean(Boolean::new(left_value == right_value)),
+                Token::NEQ => DataType::Boolean(Boolean::new(left_value != right_value)),
+                _ => Err(Error::InfixTypeMismatch(operator, left, right))?,
             },
             Tag::Literal,
         ));
@@ -334,8 +320,7 @@ fn infix(expr: InfixExpression, env: Rc<RefCell<Environment>>) -> Result<Tagged<
         }
     }
 
-    // TODO: replace panic with propagated error
-    panic!("unknown operator {}", operator)
+    Err(Error::InfixTypeMismatch(operator, left, right))?
 }
 
 #[cfg(test)]
