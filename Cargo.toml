@@ -4,6 +4,6 @@ version = "0.0.15"
 edition = "2021"
 
 [dependencies]
-chumsky = "=0.9.3"
+chumsky = "=0.10.1"
 internment = "=0.8.6"
-thiserror = { version = "=1.0.64" }
+thiserror = { version = "=1.0.69" }
