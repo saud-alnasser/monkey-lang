@@ -1,3 +1,13 @@
+## 0.0.16 (2025-10-20)
+
+### Features
+
+#### upgrade to Rust edition 2024 and disable debug symbols (#108)
+
+### Fixes
+
+#### update rust crate thiserror to v2 (#106)
+
 ## 0.0.15 (2024-10-23)
 
 ### Features
