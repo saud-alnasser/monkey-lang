@@ -31,8 +31,18 @@ jobs:
       - name: "☁️ checkout repository"
         uses: actions/checkout@v4
 
-      - name: "💿 cache cargo"
-        uses: Swatinem/rust-cache@v2
+      - name: "💿 cargo cache"
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            ./target
+          key: ${{ runner.os }}-cargo-main-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-main-
 
       - name: "🔧 install host target"
         run: rustup target add ${{ matrix.target }}
