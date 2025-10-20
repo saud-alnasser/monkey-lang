@@ -2,9 +2,9 @@ use std::{cell::RefCell, fmt::Display, rc::Rc};
 
 use internment::Intern;
 
-use crate::{ast::BlockExpression, builtins::error::Result, datatype::DataType, Environment};
+use crate::{Environment, ast::BlockExpression, builtins::error::Result, datatype::DataType};
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, Clone)]
 pub enum Function {
     Native(fn(Vec<DataType>) -> Result<DataType>),
     Normal {

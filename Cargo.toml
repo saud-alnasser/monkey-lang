@@ -1,9 +1,13 @@
 [package]
 name = "monkey-lang"
 version = "0.0.15"
-edition = "2021"
+edition = "2024"
 
 [dependencies]
 chumsky = "=0.9.3"
 internment = "=0.8.6"
-thiserror = { version = "=2.0.12" }
+thiserror = { version = "=2.0.17" }
+
+[profile.dev]
+# debug disabled due to an issue related to PDB generation in edition 2024 for complex types.
+debug = 0

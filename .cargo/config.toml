@@ -1,0 +1,14 @@
+# debug disabled due to an issue related to PDB generation in edition 2024 for complex types.
+
+[target.x86_64-pc-windows-msvc]
+# MSVC linker flag for Windows - disable PDB generation
+rustflags = ["-C", "link-arg=/DEBUG:NONE"]
+
+[target.x86_64-unknown-linux-gnu]
+# GNU linker flag for Linux - disable debug info to avoid linker issues
+rustflags = ["-C", "link-arg=-Wl,--strip-debug"]
+
+[target.aarch64-unknown-linux-gnu]
+# GNU linker flag for Linux ARM - disable debug info to avoid linker issues
+rustflags = ["-C", "link-arg=-Wl,--strip-debug"]
+

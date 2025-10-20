@@ -9,7 +9,7 @@ use std::fmt::Display;
 
 pub use self::{array::*, boolean::*, function::*, integer::*, object::*, string::*};
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, Clone)]
 pub enum DataType {
     Integer(Integer),
     String(String),
@@ -19,6 +19,24 @@ pub enum DataType {
     Object(Object),
     Undefined,
     Null,
+}
+
+impl PartialEq for DataType {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (DataType::Integer(a), DataType::Integer(b)) => a == b,
+            (DataType::String(a), DataType::String(b)) => a == b,
+            (DataType::Boolean(a), DataType::Boolean(b)) => a == b,
+            (DataType::Array(a), DataType::Array(b)) => a == b,
+            (DataType::Object(a), DataType::Object(b)) => a == b,
+            (DataType::Undefined, DataType::Undefined) => true,
+            (DataType::Null, DataType::Null) => true,
+            // Function pointers cannot be reliably compared for equality
+            // See: https://doc.rust-lang.org/nightly/core/ptr/fn.fn_addr_eq.html
+            (DataType::Function(_), DataType::Function(_)) => false,
+            _ => false,
+        }
+    }
 }
 
 impl Display for DataType {
