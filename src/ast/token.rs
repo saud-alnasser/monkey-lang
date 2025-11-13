@@ -44,7 +44,7 @@ pub enum Token {
     FALSE,
 
     // literals
-    INT(Intern<String>),
+    INT(i64),
     STRING(Intern<String>),
     IDENTIFIER(Intern<String>),
 }

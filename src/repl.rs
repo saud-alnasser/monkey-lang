@@ -4,7 +4,7 @@ use std::{
     rc::Rc,
 };
 
-use crate::{evaluator, lexer, parser, DataType, Environment};
+use crate::{DataType, Environment, evaluator, lexer, parser};
 
 static MONKEY_FACE: &str = r#"            
             __,__
@@ -43,9 +43,9 @@ impl REPL {
             io::stdout().flush().unwrap();
             io::stdin().read_line(&mut code).unwrap();
 
-            match lexer::parse(&code) {
-                Ok(tokens) => match parser::parse(tokens) {
-                    Ok(program) => match evaluator::execute(program, Rc::clone(&self.env)) {
+            match lexer::parse(&code).into_result() {
+                Ok(tokens) => match parser::parse(&tokens).into_result() {
+                    Ok(statements) => match evaluator::execute(statements, Rc::clone(&self.env)) {
                         Ok(DataType::Undefined) => (),
                         Ok(data) => println!("{}", data),
                         Err(error) => eprintln!("error: {}", error),
@@ -57,7 +57,7 @@ impl REPL {
                 Err(error) => {
                     eprintln!("error: {}", error[0]);
                 }
-            };
+            }
 
             code.clear()
         }
