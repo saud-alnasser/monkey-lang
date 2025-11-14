@@ -110,7 +110,7 @@ fn statement<'src>() -> impl Parser<'src, &'src [Token], Statement, extra::Err<R
                 .map(|(ops, expr)| {
                     ops.into_iter().rev().fold(expr, |acc, op| {
                         Expression::Prefix(PrefixExpression {
-                            operator: op,
+                            operator: op.into(),
                             right: Box::new(acc),
                         })
                     })
@@ -149,7 +149,7 @@ fn statement<'src>() -> impl Parser<'src, &'src [Token], Statement, extra::Err<R
                 |lhs, (op, rhs)| {
                     Expression::Infix(InfixExpression {
                         left: Box::new(lhs),
-                        operator: op,
+                        operator: op.into(),
                         right: Box::new(rhs),
                     })
                 },
@@ -163,7 +163,7 @@ fn statement<'src>() -> impl Parser<'src, &'src [Token], Statement, extra::Err<R
                 |lhs, (op, rhs)| {
                     Expression::Infix(InfixExpression {
                         left: Box::new(lhs),
-                        operator: op,
+                        operator: op.into(),
                         right: Box::new(rhs),
                     })
                 },
@@ -179,7 +179,7 @@ fn statement<'src>() -> impl Parser<'src, &'src [Token], Statement, extra::Err<R
                 |lhs, (op, rhs)| {
                     Expression::Infix(InfixExpression {
                         left: Box::new(lhs),
-                        operator: op,
+                        operator: op.into(),
                         right: Box::new(rhs),
                     })
                 },
@@ -193,7 +193,7 @@ fn statement<'src>() -> impl Parser<'src, &'src [Token], Statement, extra::Err<R
                 |lhs, (op, rhs)| {
                     Expression::Infix(InfixExpression {
                         left: Box::new(lhs),
-                        operator: op,
+                        operator: op.into(),
                         right: Box::new(rhs),
                     })
                 },
@@ -233,6 +233,7 @@ mod tests {
     use std::vec;
 
     use super::*;
+    use crate::ast::{BinaryOperator, UnaryOperator};
 
     #[test]
     fn test_let() {
@@ -612,7 +613,7 @@ mod tests {
                 assert_eq!(
                     expression,
                     PrefixExpression {
-                        operator: Token::MINUS,
+                        operator: UnaryOperator::Negate,
                         right: Box::new(Expression::Int(IntExpression { value: 5 }))
                     }
                 )
@@ -633,7 +634,7 @@ mod tests {
                     expression,
                     InfixExpression {
                         left: Box::new(Expression::Int(IntExpression { value: 5 })),
-                        operator: Token::PLUS,
+                        operator: BinaryOperator::Add,
                         right: Box::new(Expression::Int(IntExpression { value: 5 }))
                     }
                 );
