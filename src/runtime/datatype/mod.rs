@@ -19,6 +19,8 @@ pub enum DataType {
     Object(Object),
     Undefined,
     Null,
+    // Opaque type for IR-specific data
+    Opaque(std::rc::Rc<dyn std::any::Any>),
 }
 
 impl PartialEq for DataType {
@@ -31,9 +33,8 @@ impl PartialEq for DataType {
             (DataType::Object(a), DataType::Object(b)) => a == b,
             (DataType::Undefined, DataType::Undefined) => true,
             (DataType::Null, DataType::Null) => true,
-            // Function pointers cannot be reliably compared for equality
-            // See: https://doc.rust-lang.org/nightly/core/ptr/fn.fn_addr_eq.html
             (DataType::Function(_), DataType::Function(_)) => false,
+            (DataType::Opaque(_), DataType::Opaque(_)) => false,
             _ => false,
         }
     }
@@ -50,6 +51,7 @@ impl Display for DataType {
             DataType::Object(value) => write!(f, "{}", value),
             DataType::Undefined => write!(f, ""),
             DataType::Null => write!(f, "null"),
+            DataType::Opaque(_) => write!(f, "<opaque>"),
         }
     }
 }
@@ -65,6 +67,7 @@ impl DataType {
             DataType::Object(_) => "OBJECT",
             DataType::Undefined => "UNDEFINED",
             DataType::Null => "NULL",
+            DataType::Opaque(_) => "OPAQUE",
         }
     }
 }

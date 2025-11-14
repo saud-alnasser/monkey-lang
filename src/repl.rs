@@ -4,7 +4,12 @@ use std::{
     rc::Rc,
 };
 
-use crate::{DataType, Environment, evaluator, lexer, parser};
+use crate::{
+    ast::lexer,
+    ast::parser,
+    ir::{interpreter, program::Program, transpiler},
+    runtime::{DataType, Environment},
+};
 
 static MONKEY_FACE: &str = r#"            
             __,__
@@ -22,12 +27,14 @@ static MONKEY_FACE: &str = r#"
 
 pub struct REPL {
     env: Rc<RefCell<Environment>>,
+    program: Program,
 }
 
 impl REPL {
     pub fn new() -> Self {
         Self {
             env: Rc::new(RefCell::new(Environment::new(None))),
+            program: Program::new(),
         }
     }
 
@@ -45,17 +52,27 @@ impl REPL {
 
             match lexer::parse(&code).into_result() {
                 Ok(tokens) => match parser::parse(&tokens).into_result() {
-                    Ok(statements) => match evaluator::execute(statements, Rc::clone(&self.env)) {
-                        Ok(DataType::Undefined) => (),
-                        Ok(data) => println!("{}", data),
-                        Err(error) => eprintln!("error: {}", error),
+                    Ok(statements) => match transpiler::transpile(statements) {
+                        Ok(new_program) => {
+                            for (label, block) in new_program.blocks {
+                                self.program.blocks.insert(label, block);
+                            }
+                            self.program.entry_label = new_program.entry_label;
+
+                            match interpreter::execute(self.program.clone(), Rc::clone(&self.env)) {
+                                Ok(DataType::Undefined) => (),
+                                Ok(data) => println!("{}", data),
+                                Err(error) => eprintln!("runtime error: {}", error),
+                            }
+                        }
+                        Err(error) => eprintln!("transpilation error: {}", error),
                     },
                     Err(error) => {
-                        eprintln!("error: {}", error[0]);
+                        eprintln!("parse error: {}", error[0]);
                     }
                 },
                 Err(error) => {
-                    eprintln!("error: {}", error[0]);
+                    eprintln!("lexer error: {}", error[0]);
                 }
             }
 

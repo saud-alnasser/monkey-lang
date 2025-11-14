@@ -1,340 +1,351 @@
 mod error;
 
-use std::{cell::RefCell, collections::HashMap, rc::Rc};
+use std::cell::RefCell;
+use std::collections::HashMap;
+use std::rc::Rc;
 
-use error::Error;
+use crate::ast::{BinaryOperator, UnaryOperator};
+use crate::ir::{self, program::*};
+use crate::runtime::datatype::*;
+use crate::runtime::environment::Environment;
 
-use self::error::Result;
-use crate::{Environment, ast::*, datatype::*};
+pub use error::{Error, Result};
 
-#[derive(Debug, PartialEq, Clone)]
-enum Tag {
-    Literal,
-    Identifier,
-    Return,
+pub struct Interpreter {
+    program: Program,
+    env: Rc<RefCell<Environment>>,
+    temps: HashMap<Temp, DataType>,
 }
 
-type Tagged<T> = (T, Tag);
-
-pub fn execute(statements: Vec<Statement>, env: Rc<RefCell<Environment>>) -> Result<DataType> {
-    let mut result: Tagged<DataType> = (DataType::Undefined, Tag::Literal);
-
-    for stmt in statements {
-        result = statement(stmt, Rc::clone(&env))?;
-
-        if let Tag::Return = result.1 {
-            return Ok(result.0);
-        }
-    }
-
-    Ok(result.0)
-}
-
-fn statement(stmt: Statement, env: Rc<RefCell<Environment>>) -> Result<Tagged<DataType>> {
-    match stmt {
-        Statement::Let {
-            identifier: ident,
-            expression: expr,
-        } => {
-            let ident = &ident.value;
-            let value = expression(expr, Rc::clone(&env))?.0;
-            env.borrow_mut().set(ident, value);
-            Ok((DataType::Undefined, Tag::Literal))
-        }
-        Statement::Return(expr) => Ok((expression(expr, Rc::clone(&env))?.0, Tag::Return)),
-        Statement::Expression(expr) => expression(expr, env),
-    }
-}
-
-fn expression(expr: Expression, env: Rc<RefCell<Environment>>) -> Result<Tagged<DataType>> {
-    match expr {
-        Expression::Block(expr) => block(expr, env),
-        Expression::Array(expr) => array(expr, env),
-        Expression::Object(expr) => object(expr, env),
-        Expression::Function(expr) => function(expr, env),
-        Expression::If(expr) => r#if(expr, env),
-        Expression::Call(expr) => call(expr, env),
-        Expression::Index(expr) => index(expr, env),
-        Expression::Int(expr) => int(expr),
-        Expression::String(expr) => string(expr),
-        Expression::Boolean(expr) => boolean(expr),
-        Expression::Identifier(expr) => identifier(expr, env),
-        Expression::Prefix(expr) => prefix(expr, env),
-        Expression::Infix(expr) => infix(expr, env),
-    }
-}
-
-fn block(expr: BlockExpression, env: Rc<RefCell<Environment>>) -> Result<Tagged<DataType>> {
-    let mut result: Tagged<DataType> = (DataType::Undefined, Tag::Literal);
-
-    for stmt in expr.statements {
-        result = statement(stmt, Rc::clone(&env))?;
-
-        if let Tag::Return = result.1 {
-            return Ok(result);
-        }
-    }
-
-    Ok(result)
-}
-
-fn array(expr: ArrayExpression, env: Rc<RefCell<Environment>>) -> Result<Tagged<DataType>> {
-    let elements = expr
-        .elements
-        .into_iter()
-        .map(|element| expression(element, Rc::clone(&env)))
-        .collect::<Result<Vec<Tagged<DataType>>>>()?
-        .into_iter()
-        .map(|(element, _)| element)
-        .collect::<Vec<DataType>>();
-
-    Ok((DataType::Array(Array::new(elements)), Tag::Literal))
-}
-
-fn object(expr: ObjectExpression, env: Rc<RefCell<Environment>>) -> Result<Tagged<DataType>> {
-    let mut pairs = HashMap::<ObjectKey, DataType>::new();
-
-    for (key, value) in expr.pairs.into_iter() {
-        pairs.insert(
-            match key {
-                Expression::String(expr) => ObjectKey::String(String::new(expr.value)),
-                Expression::Int(expr) => ObjectKey::Integer(Integer::new(expr.value)),
-                Expression::Boolean(expr) => ObjectKey::Boolean(Boolean::new(expr.value)),
-                _ => Err(Error::ObjectKeyTypeMismatch(key))?,
-            },
-            expression(value, Rc::clone(&env))?.0,
-        );
-    }
-
-    Ok((DataType::Object(Object::new(pairs)), Tag::Literal))
-}
-
-fn function(expr: FunctionExpression, env: Rc<RefCell<Environment>>) -> Result<Tagged<DataType>> {
-    Ok((
-        DataType::Function(Function::Normal {
-            parameters: expr
-                .parameters
-                .into_iter()
-                .map(|param| param.value)
-                .collect(),
-            body: expr.body,
-            env: Rc::new(RefCell::new(Environment::new(Some(Rc::clone(&env))))),
-        }),
-        Tag::Literal,
-    ))
-}
-
-fn r#if(expr: IfExpression, env: Rc<RefCell<Environment>>) -> Result<Tagged<DataType>> {
-    let condition = match expression(*expr.condition, Rc::clone(&env))?.0 {
-        DataType::Boolean(value) => *value,
-        DataType::Integer(value) => *value != 0,
-        _ => false,
-    };
-
-    Ok(match condition {
-        true => block(*expr.consequence, env)?,
-        false => match expr.alternative {
-            Some(alternative) => block(*alternative, env)?,
-            None => (DataType::Undefined, Tag::Literal),
-        },
-    })
-}
-
-fn call(expr: CallExpression, env: Rc<RefCell<Environment>>) -> Result<Tagged<DataType>> {
-    let callable = expression(*expr.callable, Rc::clone(&env))?.0;
-
-    let arguments = expr
-        .arguments
-        .into_iter()
-        .map(|argument| expression(argument, Rc::clone(&env)))
-        .collect::<Result<Vec<Tagged<DataType>>>>()?;
-
-    match callable {
-        DataType::Function(Function::Normal {
-            parameters,
-            body,
+impl Interpreter {
+    pub fn new(program: Program, env: Rc<RefCell<Environment>>) -> Self {
+        Self {
+            program,
             env,
-        }) => {
-            let scoped_env = Rc::new(RefCell::new(Environment::new(Some(Rc::clone(&env)))));
+            temps: HashMap::new(),
+        }
+    }
 
-            for (parameter, argument) in parameters.into_iter().zip(arguments.into_iter()) {
-                scoped_env.borrow_mut().set(&parameter, argument.0);
+    /// Execute the IR program
+    pub fn execute(mut self) -> Result<DataType> {
+        let entry = self.program.entry_label.clone();
+        self.execute_block(&entry)
+    }
+
+    /// Execute a basic block
+    fn execute_block(&mut self, label: &Label) -> Result<DataType> {
+        let block = self
+            .program
+            .get_block(label)
+            .ok_or_else(|| Error::InvalidLabel(label.clone()))?
+            .clone();
+
+        // Execute all instruction s
+        for instr in block.instructions {
+            self.execute_instruction(instr)?;
+        }
+
+        // Execute terminator
+        self.execute_terminator(block.terminator)
+    }
+
+    /// Execute a single instruction
+    fn execute_instruction(&mut self, instr: Instruction) -> Result<()> {
+        match instr {
+            Instruction::Assign { dest, value } => {
+                let val = self.eval_value(value)?;
+                self.temps.insert(dest, val);
             }
 
-            return Ok((block(*body, Rc::clone(&scoped_env))?.0, Tag::Literal));
-        }
-        DataType::Function(Function::Native(function)) => {
-            let args = arguments
-                .into_iter()
-                .map(|argument| argument.0)
-                .collect::<Vec<DataType>>();
+            Instruction::Binary {
+                dest,
+                op,
+                left,
+                right,
+            } => {
+                let l = self.eval_value(left)?;
+                let r = self.eval_value(right)?;
+                let result = self.eval_binary(op, l, r)?;
+                self.temps.insert(dest, result);
+            }
 
-            return Ok((function(args)?, Tag::Literal));
+            Instruction::Unary { dest, op, operand } => {
+                let val = self.eval_value(operand)?;
+                let result = self.eval_unary(op, val)?;
+                self.temps.insert(dest, result);
+            }
+
+            Instruction::StoreVar { name, value } => {
+                let val = self.eval_value(value)?;
+                self.env.borrow_mut().set(&name, val);
+            }
+
+            Instruction::LoadVar { dest, name } => {
+                let val = self
+                    .env
+                    .borrow()
+                    .get(&name)
+                    .ok_or_else(|| Error::UndefinedVariable(name))?;
+                self.temps.insert(dest, val);
+            }
+
+            Instruction::MakeArray { dest, elements } => {
+                self.temps.insert(
+                    dest,
+                    DataType::Array(Array::new(
+                        elements
+                            .into_iter()
+                            .map(|e| self.eval_value(e))
+                            .collect::<Result<Vec<_>>>()?,
+                    )),
+                );
+            }
+
+            Instruction::MakeObject { dest, pairs } => {
+                let mut map = HashMap::new();
+                for (k, v) in pairs {
+                    let key_val = self.eval_value(k)?;
+                    let value = self.eval_value(v)?;
+
+                    // Convert DataType to ObjectKey
+                    let key = match key_val {
+                        DataType::String(s) => ObjectKey::String(s),
+                        DataType::Integer(i) => ObjectKey::Integer(i),
+                        DataType::Boolean(b) => ObjectKey::Boolean(b),
+                        _ => return Err(Error::IndexTypeMismatch(key_val.name_of().to_string())),
+                    };
+
+                    map.insert(key, value);
+                }
+                self.temps.insert(dest, DataType::Object(Object::new(map)));
+            }
+
+            Instruction::MakeFunction {
+                dest,
+                params,
+                body_label,
+            } => {
+                use crate::ir::Function;
+
+                self.temps.insert(
+                    dest,
+                    DataType::Opaque(Rc::new(Function::new(
+                        params,
+                        body_label,
+                        Rc::clone(&self.env),
+                    ))),
+                );
+            }
+
+            Instruction::Call {
+                dest,
+                callable,
+                args,
+            } => {
+                let func = self.eval_value(callable)?;
+                let arguments = args
+                    .into_iter()
+                    .map(|a| self.eval_value(a))
+                    .collect::<Result<Vec<_>>>()?;
+
+                let result = self.call_function(func, arguments)?;
+                self.temps.insert(dest, result);
+            }
+
+            Instruction::Index {
+                dest,
+                indexable,
+                index,
+            } => {
+                let idx_val = self.eval_value(indexable)?;
+                let idx = self.eval_value(index)?;
+                let result = self.eval_index(idx_val, idx)?;
+                self.temps.insert(dest, result);
+            }
         }
-        _ => Err(Error::NonCallable(callable))?,
+
+        Ok(())
     }
-}
 
-fn index(expr: IndexExpression, env: Rc<RefCell<Environment>>) -> Result<Tagged<DataType>> {
-    let indexable = expression(*expr.left, Rc::clone(&env))?.0;
-    let index = expression(*expr.index, Rc::clone(&env))?.0;
+    /// Execute a terminator
+    fn execute_terminator(&mut self, term: Terminator) -> Result<DataType> {
+        match term {
+            Terminator::Goto { target } => self.execute_block(&target),
 
-    if let DataType::Array(array) = &indexable {
-        if let DataType::Integer(value) = index {
-            return Ok((
-                match *value < 0 || *value as usize >= array.len() {
-                    true => DataType::Null,
-                    false => array
-                        .get(*value as usize)
-                        .ok_or(Error::IndexOutOfBounds(*value as usize))?
-                        .clone(),
-                },
-                Tag::Literal,
-            ));
-        }
-    }
+            Terminator::Branch {
+                condition,
+                true_label,
+                false_label,
+            } => {
+                let cond = self.eval_value(condition)?;
+                let is_true = match cond {
+                    DataType::Boolean(b) => *b,
+                    DataType::Integer(i) => *i != 0,
+                    _ => false,
+                };
 
-    if let DataType::Object(object) = indexable {
-        if let DataType::String(key) = index {
-            return match object.get(&ObjectKey::String(key)) {
-                Some(value) => Ok((value.clone(), Tag::Literal)),
-                None => Ok((DataType::Null, Tag::Literal)),
-            };
-        }
+                let target = if is_true { true_label } else { false_label };
+                self.execute_block(&target)
+            }
 
-        if let DataType::Integer(key) = index {
-            return match object.get(&ObjectKey::Integer(key)) {
-                Some(value) => Ok((value.clone(), Tag::Literal)),
-                None => Ok((DataType::Null, Tag::Literal)),
-            };
-        }
-
-        if let DataType::Boolean(key) = index {
-            return match object.get(&ObjectKey::Boolean(key)) {
-                Some(value) => Ok((value.clone(), Tag::Literal)),
-                None => Ok((DataType::Null, Tag::Literal)),
-            };
-        }
-    }
-
-    Err(Error::IndexTypeMismatch(index))?
-}
-
-fn boolean(expr: BooleanExpression) -> Result<Tagged<DataType>> {
-    Ok((DataType::Boolean(Boolean::new(expr.value)), Tag::Literal))
-}
-
-fn int(expr: IntExpression) -> Result<Tagged<DataType>> {
-    Ok((DataType::Integer(Integer::new(expr.value)), Tag::Literal))
-}
-
-fn string(expr: StringExpression) -> Result<Tagged<DataType>> {
-    Ok((DataType::String(String::new(expr.value)), Tag::Literal))
-}
-
-fn identifier(
-    expr: IdentifierExpression,
-    env: Rc<RefCell<Environment>>,
-) -> Result<Tagged<DataType>> {
-    match env.borrow().get(&expr.value) {
-        Some(value) => Ok((value, Tag::Identifier)),
-        None => Err(Error::UndefinedIdentifier(expr.value))?,
-    }
-}
-
-fn prefix(expr: PrefixExpression, env: Rc<RefCell<Environment>>) -> Result<Tagged<DataType>> {
-    let operator = expr.operator;
-    let right = expression(*expr.right, Rc::clone(&env))?.0;
-
-    if let DataType::Integer(value) = &right {
-        return Ok((
-            match operator {
-                UnaryOperator::Not => DataType::Boolean(Boolean::new(**value == 0)),
-                UnaryOperator::Negate => DataType::Integer(Integer::new(-**value)),
+            Terminator::Return { value } => match value {
+                Some(v) => Ok(self.eval_value(v)?),
+                None => Ok(DataType::Undefined),
             },
-            Tag::Literal,
-        ));
-    }
 
-    if let DataType::Boolean(value) = &right {
-        return Ok((
-            match operator {
-                UnaryOperator::Not => DataType::Boolean(Boolean::new(!**value)),
-                _ => Err(Error::PrefixBooleanTypeMismatch(operator, right))?,
-            },
-            Tag::Literal,
-        ));
-    }
-
-    Err(Error::PrefixBooleanTypeMismatch(operator, right))?
-}
-
-fn infix(expr: InfixExpression, env: Rc<RefCell<Environment>>) -> Result<Tagged<DataType>> {
-    let operator = expr.operator;
-    let left = expression(*expr.left, Rc::clone(&env))?.0;
-    let right = expression(*expr.right, Rc::clone(&env))?.0;
-
-    if let (DataType::Integer(left_value), DataType::Integer(right_value)) = (&left, &right) {
-        let left_value = **left_value;
-        let right_value = **right_value;
-
-        return Ok((
-            match operator {
-                BinaryOperator::Add => DataType::Integer(Integer::new(left_value + right_value)),
-                BinaryOperator::Subtract => {
-                    DataType::Integer(Integer::new(left_value - right_value))
-                }
-                BinaryOperator::Multiply => {
-                    DataType::Integer(Integer::new(left_value * right_value))
-                }
-                BinaryOperator::Divide => DataType::Integer(Integer::new(left_value / right_value)),
-                BinaryOperator::LessThan => {
-                    DataType::Boolean(Boolean::new(left_value < right_value))
-                }
-                BinaryOperator::GreaterThan => {
-                    DataType::Boolean(Boolean::new(left_value > right_value))
-                }
-                BinaryOperator::LessThanOrEqual => {
-                    DataType::Boolean(Boolean::new(left_value <= right_value))
-                }
-                BinaryOperator::GreaterThanOrEqual => {
-                    DataType::Boolean(Boolean::new(left_value >= right_value))
-                }
-                BinaryOperator::Equal => DataType::Boolean(Boolean::new(left_value == right_value)),
-                BinaryOperator::NotEqual => {
-                    DataType::Boolean(Boolean::new(left_value != right_value))
-                }
-            },
-            Tag::Literal,
-        ));
-    }
-
-    if let (DataType::Boolean(left_value), DataType::Boolean(right_value)) = (&left, &right) {
-        let left_value = **left_value;
-        let right_value = **right_value;
-
-        return Ok((
-            match operator {
-                BinaryOperator::Equal => DataType::Boolean(Boolean::new(left_value == right_value)),
-                BinaryOperator::NotEqual => {
-                    DataType::Boolean(Boolean::new(left_value != right_value))
-                }
-                _ => Err(Error::InfixTypeMismatch(operator, left, right))?,
-            },
-            Tag::Literal,
-        ));
-    }
-
-    if let (DataType::String(left), DataType::String(right)) = (&left, &right) {
-        if operator == BinaryOperator::Add {
-            return Ok((
-                DataType::String(String::new(format!("{}{}", left, right).into())),
-                Tag::Literal,
-            ));
+            Terminator::Exit { value } => Ok(self.eval_value(value)?),
         }
     }
 
-    Err(Error::InfixTypeMismatch(operator, left, right))?
+    /// Evaluate a Value to a DataType
+    fn eval_value(&self, value: Value) -> Result<DataType> {
+        match value {
+            Value::Constant(c) => Ok(c),
+            Value::Temp(t) => self
+                .temps
+                .get(&t)
+                .cloned()
+                .ok_or_else(|| Error::UndefinedTemp(t)),
+            Value::Var(name) => self
+                .env
+                .borrow()
+                .get(&name)
+                .ok_or_else(|| Error::UndefinedVariable(name)),
+        }
+    }
+
+    /// Evaluate binary operation
+    fn eval_binary(&self, op: BinaryOperator, left: DataType, right: DataType) -> Result<DataType> {
+        match (&left, &right) {
+            (DataType::Integer(l), DataType::Integer(r)) => {
+                let l = **l;
+                let r = **r;
+                Ok(match op {
+                    BinaryOperator::Add => DataType::Integer(Integer::new(l + r)),
+                    BinaryOperator::Subtract => DataType::Integer(Integer::new(l - r)),
+                    BinaryOperator::Multiply => DataType::Integer(Integer::new(l * r)),
+                    BinaryOperator::Divide => DataType::Integer(Integer::new(l / r)),
+                    BinaryOperator::LessThan => DataType::Boolean(Boolean::new(l < r)),
+                    BinaryOperator::GreaterThan => DataType::Boolean(Boolean::new(l > r)),
+                    BinaryOperator::LessThanOrEqual => DataType::Boolean(Boolean::new(l <= r)),
+                    BinaryOperator::GreaterThanOrEqual => DataType::Boolean(Boolean::new(l >= r)),
+                    BinaryOperator::Equal => DataType::Boolean(Boolean::new(l == r)),
+                    BinaryOperator::NotEqual => DataType::Boolean(Boolean::new(l != r)),
+                })
+            }
+            (DataType::Boolean(l), DataType::Boolean(r)) => {
+                let l = **l;
+                let r = **r;
+                Ok(match op {
+                    BinaryOperator::Equal => DataType::Boolean(Boolean::new(l == r)),
+                    BinaryOperator::NotEqual => DataType::Boolean(Boolean::new(l != r)),
+                    _ => {
+                        return Err(Error::TypeMismatch(
+                            op,
+                            left.name_of().to_string(),
+                            right.name_of().to_string(),
+                        ));
+                    }
+                })
+            }
+            (DataType::String(l), DataType::String(r)) => {
+                if op == BinaryOperator::Add {
+                    Ok(DataType::String(String::new(format!("{}{}", l, r).into())))
+                } else {
+                    Err(Error::TypeMismatch(
+                        op,
+                        left.name_of().to_string(),
+                        right.name_of().to_string(),
+                    ))
+                }
+            }
+            _ => Err(Error::TypeMismatch(
+                op,
+                left.name_of().to_string(),
+                right.name_of().to_string(),
+            )),
+        }
+    }
+
+    /// Evaluate unary operation
+    fn eval_unary(&self, op: UnaryOperator, operand: DataType) -> Result<DataType> {
+        match &operand {
+            DataType::Integer(i) => Ok(match op {
+                UnaryOperator::Negate => DataType::Integer(Integer::new(-**i)),
+                UnaryOperator::Not => DataType::Boolean(Boolean::new(**i == 0)),
+            }),
+            DataType::Boolean(b) => Ok(match op {
+                UnaryOperator::Not => DataType::Boolean(Boolean::new(!**b)),
+                _ => return Err(Error::UnaryTypeMismatch(op, operand.name_of().to_string())),
+            }),
+            _ => Err(Error::UnaryTypeMismatch(op, operand.name_of().to_string())),
+        }
+    }
+
+    /// Evaluate indexing
+    fn eval_index(&self, indexable: DataType, index: DataType) -> Result<DataType> {
+        match indexable {
+            DataType::Array(arr) => {
+                if let DataType::Integer(i) = index {
+                    let idx = *i as usize;
+                    Ok(arr.get(idx).cloned().unwrap_or(DataType::Null))
+                } else {
+                    Err(Error::IndexTypeMismatch(index.name_of().to_string()))
+                }
+            }
+            DataType::Object(obj) => {
+                // Convert DataType to ObjectKey
+                let key = match index {
+                    DataType::String(s) => ObjectKey::String(s),
+                    DataType::Integer(i) => ObjectKey::Integer(i),
+                    DataType::Boolean(b) => ObjectKey::Boolean(b),
+                    _ => return Err(Error::IndexTypeMismatch(index.name_of().to_string())),
+                };
+                Ok(obj.get(&key).cloned().unwrap_or(DataType::Null))
+            }
+            _ => Err(Error::NotIndexable(indexable.name_of().to_string())),
+        }
+    }
+
+    /// Call a function
+    fn call_function(&mut self, func: DataType, args: Vec<DataType>) -> Result<DataType> {
+        match func {
+            DataType::Function(Function(f)) => f(args).map_err(Error::BuiltinError),
+
+            DataType::Opaque(opaque) => {
+                if let Some(func) = opaque.downcast_ref::<ir::Function>() {
+                    let scoped_env =
+                        Rc::new(RefCell::new(Environment::new(Some(Rc::clone(&func.env)))));
+
+                    for (param, arg) in func.parameters.iter().zip(args.iter()) {
+                        scoped_env.borrow_mut().set(param, arg.clone());
+                    }
+
+                    let saved_env = Rc::clone(&self.env);
+                    let saved_temps = self.temps.clone();
+
+                    self.env = scoped_env;
+                    self.temps.clear();
+
+                    let result = self.execute_block(&func.body_label);
+
+                    self.env = saved_env;
+                    self.temps = saved_temps;
+
+                    result
+                } else {
+                    Err(Error::NotCallable("OPAQUE".to_string()))
+                }
+            }
+
+            _ => Err(Error::NotCallable(func.name_of().to_string())),
+        }
+    }
+}
+
+pub fn execute(program: Program, env: Rc<RefCell<Environment>>) -> Result<DataType> {
+    let interpreter = Interpreter::new(program, env);
+    interpreter.execute()
 }
 
 #[cfg(test)]
@@ -342,7 +353,7 @@ mod tests {
     use std::vec;
 
     use super::*;
-    use crate::{lexer, parser};
+    use crate::{ast::lexer, ast::parser, ir::transpiler};
 
     #[test]
     fn test_eval_integer_expressions() {
@@ -369,7 +380,7 @@ mod tests {
             let statements = parser::parse(&tokens).unwrap();
             let env = Rc::new(RefCell::new(Environment::new(None)));
 
-            match execute(statements, env) {
+            match execute(transpiler::transpile(statements).unwrap(), env) {
                 Ok(DataType::Integer(value)) => assert_eq!(*value, expected),
                 _ => panic!("expected an integer, got something else"),
             }
@@ -385,7 +396,7 @@ mod tests {
             let program = parser::parse(&tokens).unwrap();
             let env = Rc::new(RefCell::new(Environment::new(None)));
 
-            match execute(program, env) {
+            match execute(transpiler::transpile(program).unwrap(), env) {
                 Ok(DataType::String(value)) => assert_eq!(&value[..], expected),
                 _ => panic!("expected a string, got something else"),
             }
@@ -401,7 +412,7 @@ mod tests {
             let program = parser::parse(&tokens).unwrap();
             let env = Rc::new(RefCell::new(Environment::new(None)));
 
-            match execute(program, env) {
+            match execute(transpiler::transpile(program).unwrap(), env) {
                 Ok(DataType::String(value)) => assert_eq!(&value[..], expected),
                 _ => panic!("expected a string, got something else"),
             }
@@ -453,7 +464,7 @@ mod tests {
             let program = parser::parse(&tokens).unwrap();
             let env = Rc::new(RefCell::new(Environment::new(None)));
 
-            match execute(program, env) {
+            match execute(transpiler::transpile(program).unwrap(), env) {
                 Ok(DataType::Boolean(value)) => assert_eq!(*value, expected),
                 _ => panic!("expected a boolean, got something else"),
             }
@@ -473,7 +484,7 @@ mod tests {
             let program = parser::parse(&tokens).unwrap();
             let env = Rc::new(RefCell::new(Environment::new(None)));
 
-            match execute(program, env) {
+            match execute(transpiler::transpile(program).unwrap(), env) {
                 Ok(DataType::Array(value)) => {
                     assert_eq!(
                         value
@@ -511,7 +522,7 @@ mod tests {
             let program = parser::parse(&tokens).unwrap();
             let env = Rc::new(RefCell::new(Environment::new(None)));
 
-            match execute(program, env) {
+            match execute(transpiler::transpile(program).unwrap(), env) {
                 Ok(DataType::Integer(value)) => assert_eq!(*value, expected),
                 Ok(DataType::Null) => assert_eq!(0, expected),
                 _ => panic!("expected an integer, got something else"),
@@ -536,7 +547,7 @@ mod tests {
             let program = parser::parse(&tokens).unwrap();
             let env = Rc::new(RefCell::new(Environment::new(None)));
 
-            match execute(program, env) {
+            match execute(transpiler::transpile(program).unwrap(), env) {
                 Ok(DataType::Integer(value)) => assert_eq!(*value, expected),
                 Ok(DataType::Undefined) => assert_eq!(expected, 0),
                 _ => panic!("expected an integer, got something else"),
@@ -568,7 +579,7 @@ mod tests {
             let program = parser::parse(&tokens).unwrap();
             let env = Rc::new(RefCell::new(Environment::new(None)));
 
-            match execute(program, env) {
+            match execute(transpiler::transpile(program).unwrap(), env) {
                 Ok(DataType::Integer(value)) => assert_eq!(*value, expected),
                 _ => panic!("expected a return statement, got something else"),
             }
@@ -589,7 +600,7 @@ mod tests {
             let program = parser::parse(&tokens).unwrap();
             let env = Rc::new(RefCell::new(Environment::new(None)));
 
-            match execute(program, env) {
+            match execute(transpiler::transpile(program).unwrap(), env) {
                 Ok(DataType::Integer(value)) => assert_eq!(*value, expected),
                 _ => panic!("expected an integer, got something else"),
             }
@@ -604,15 +615,14 @@ mod tests {
         let program = parser::parse(&tokens).unwrap();
         let env = Rc::new(RefCell::new(Environment::new(None)));
 
-        match execute(program, env) {
-            Ok(DataType::Function(Function::Normal {
-                parameters, body, ..
-            })) => {
-                assert_eq!(parameters.len(), 1);
-                assert_eq!(&**parameters.first().unwrap(), "x");
+        match execute(transpiler::transpile(program).unwrap(), env) {
+            Ok(DataType::Opaque(opaque)) => {
+                use crate::ir::Function;
+                let ir_func = opaque.downcast_ref::<Function>().unwrap();
 
-                assert_eq!(body.statements.len(), 1);
-                assert_eq!(body.statements.first().unwrap().to_string(), "(x + 2);");
+                assert_eq!(ir_func.parameters.len(), 1);
+                assert_eq!(&**ir_func.parameters.first().unwrap(), "x");
+                assert_eq!(ir_func.body_label.0, 1);
             }
             _ => panic!("expected a function, got something else"),
         }
@@ -644,7 +654,7 @@ mod tests {
             let program = parser::parse(&tokens).unwrap();
             let env = Rc::new(RefCell::new(Environment::new(None)));
 
-            let result = execute(program, Rc::clone(&env)).unwrap();
+            let result = execute(transpiler::transpile(program).unwrap(), Rc::clone(&env)).unwrap();
 
             assert_eq!(result, expected);
         }
@@ -666,7 +676,7 @@ mod tests {
             let program = parser::parse(&tokens).unwrap();
             let env = Rc::new(RefCell::new(Environment::new(None)));
 
-            match execute(program, env) {
+            match execute(transpiler::transpile(program).unwrap(), env) {
                 Ok(DataType::Integer(value)) => assert_eq!(*value, expected),
                 _ => panic!("expected an integer, got something else"),
             }
@@ -682,7 +692,7 @@ mod tests {
         let program = parser::parse(&tokens).unwrap();
         let env = Rc::new(RefCell::new(Environment::new(None)));
 
-        match execute(program, env) {
+        match execute(transpiler::transpile(program).unwrap(), env) {
             Ok(DataType::Integer(value)) => assert_eq!(*value, 4),
             _ => panic!("expected an integer, got something else"),
         }
@@ -697,7 +707,7 @@ mod tests {
             let program = parser::parse(&tokens).unwrap();
             let env = Rc::new(RefCell::new(Environment::new(None)));
 
-            match execute(program, env) {
+            match execute(transpiler::transpile(program).unwrap(), env) {
                 Ok(DataType::Integer(value)) => assert_eq!(*value, expected),
                 _ => panic!("expected an integer, got something else"),
             }
@@ -706,11 +716,11 @@ mod tests {
         let test_errors = vec![
             (
                 "len(1);",
-                r#"argument[0] passed to BUILTIN("len") is not supported. got=1, want=STRING|ARRAY"#,
+                r#"builtin error: argument[0] passed to BUILTIN("len") is not supported. got=1, want=STRING|ARRAY"#,
             ),
             (
                 r#"len("one", "two");"#,
-                r#"extra arguments are passed to BUILTIN("len"). got=2, want=1"#,
+                r#"builtin error: extra arguments are passed to BUILTIN("len"). got=2, want=1"#,
             ),
         ];
 
@@ -719,7 +729,7 @@ mod tests {
             let program = parser::parse(&tokens).unwrap();
             let env = Rc::new(RefCell::new(Environment::new(None)));
 
-            match execute(program, env) {
+            match execute(transpiler::transpile(program).unwrap(), env) {
                 Err(error) => assert_eq!(error.to_string(), expected),
                 _ => panic!("expected an error, got something else"),
             }
@@ -741,7 +751,7 @@ mod tests {
             let program = parser::parse(&tokens).unwrap();
             let env = Rc::new(RefCell::new(Environment::new(None)));
 
-            match execute(program, env) {
+            match execute(transpiler::transpile(program).unwrap(), env) {
                 Ok(DataType::Integer(value)) => assert_eq!(*value, expected),
                 Ok(DataType::Null) => assert_eq!(0, expected),
                 _ => panic!("expected an integer, got something else"),
@@ -751,11 +761,11 @@ mod tests {
         let test_errors = vec![
             (
                 "first(1);",
-                r#"argument[0] passed to BUILTIN("first") is not supported. got=1, want=ARRAY"#,
+                r#"builtin error: argument[0] passed to BUILTIN("first") is not supported. got=1, want=ARRAY"#,
             ),
             (
                 r#"first([1], [2]);"#,
-                r#"extra arguments are passed to BUILTIN("first"). got=2, want=1"#,
+                r#"builtin error: extra arguments are passed to BUILTIN("first"). got=2, want=1"#,
             ),
         ];
 
@@ -764,7 +774,7 @@ mod tests {
             let program = parser::parse(&tokens).unwrap();
             let env = Rc::new(RefCell::new(Environment::new(None)));
 
-            match execute(program, env) {
+            match execute(transpiler::transpile(program).unwrap(), env) {
                 Err(error) => assert_eq!(error.to_string(), expected),
                 _ => panic!("expected an error, got something else"),
             }
@@ -786,7 +796,7 @@ mod tests {
             let program = parser::parse(&tokens).unwrap();
             let env = Rc::new(RefCell::new(Environment::new(None)));
 
-            match execute(program, env) {
+            match execute(transpiler::transpile(program).unwrap(), env) {
                 Ok(DataType::Integer(value)) => assert_eq!(*value, expected),
                 Ok(DataType::Null) => assert_eq!(0, expected),
                 _ => panic!("expected an integer, got something else"),
@@ -796,11 +806,11 @@ mod tests {
         let test_errors = vec![
             (
                 "last(1);",
-                r#"argument[0] passed to BUILTIN("last") is not supported. got=1, want=ARRAY"#,
+                r#"builtin error: argument[0] passed to BUILTIN("last") is not supported. got=1, want=ARRAY"#,
             ),
             (
                 r#"last([1], [2]);"#,
-                r#"extra arguments are passed to BUILTIN("last"). got=2, want=1"#,
+                r#"builtin error: extra arguments are passed to BUILTIN("last"). got=2, want=1"#,
             ),
         ];
 
@@ -809,7 +819,7 @@ mod tests {
             let program = parser::parse(&tokens).unwrap();
             let env = Rc::new(RefCell::new(Environment::new(None)));
 
-            match execute(program, env) {
+            match execute(transpiler::transpile(program).unwrap(), env) {
                 Err(error) => assert_eq!(error.to_string(), expected),
                 _ => panic!("expected an error, got something else"),
             }
@@ -831,7 +841,7 @@ mod tests {
             let program = parser::parse(&tokens).unwrap();
             let env = Rc::new(RefCell::new(Environment::new(None)));
 
-            match execute(program, env) {
+            match execute(transpiler::transpile(program).unwrap(), env) {
                 Ok(DataType::Array(value)) => {
                     assert_eq!(
                         value
@@ -852,11 +862,11 @@ mod tests {
         let test_errors = vec![
             (
                 "rest(1);",
-                r#"argument[0] passed to BUILTIN("rest") is not supported. got=1, want=ARRAY"#,
+                r#"builtin error: argument[0] passed to BUILTIN("rest") is not supported. got=1, want=ARRAY"#,
             ),
             (
                 r#"rest([1], [2]);"#,
-                r#"extra arguments are passed to BUILTIN("rest"). got=2, want=1"#,
+                r#"builtin error: extra arguments are passed to BUILTIN("rest"). got=2, want=1"#,
             ),
         ];
 
@@ -865,7 +875,7 @@ mod tests {
             let program = parser::parse(&tokens).unwrap();
             let env = Rc::new(RefCell::new(Environment::new(None)));
 
-            match execute(program, env) {
+            match execute(transpiler::transpile(program).unwrap(), env) {
                 Err(error) => assert_eq!(error.to_string(), expected),
                 _ => panic!("expected an error, got something else"),
             }
@@ -886,7 +896,7 @@ mod tests {
             let program = parser::parse(&tokens).unwrap();
             let env = Rc::new(RefCell::new(Environment::new(None)));
 
-            match execute(program, env) {
+            match execute(transpiler::transpile(program).unwrap(), env) {
                 Ok(DataType::Array(value)) => {
                     assert_eq!(
                         value
@@ -906,11 +916,11 @@ mod tests {
         let test_errors = vec![
             (
                 "push(1, 1);",
-                r#"argument[0] passed to BUILTIN("push") is not supported. got=1, want=ARRAY"#,
+                r#"builtin error: argument[0] passed to BUILTIN("push") is not supported. got=1, want=ARRAY"#,
             ),
             (
                 "push([1]);",
-                r#"extra arguments are passed to BUILTIN("push"). got=1, want=2"#,
+                r#"builtin error: extra arguments are passed to BUILTIN("push"). got=1, want=2"#,
             ),
         ];
 
@@ -919,7 +929,7 @@ mod tests {
             let program = parser::parse(&tokens).unwrap();
             let env = Rc::new(RefCell::new(Environment::new(None)));
 
-            match execute(program, env) {
+            match execute(transpiler::transpile(program).unwrap(), env) {
                 Err(error) => assert_eq!(error.to_string(), expected),
                 _ => panic!("expected an error, got something else"),
             }
