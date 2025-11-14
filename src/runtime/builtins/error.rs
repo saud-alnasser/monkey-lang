@@ -1,6 +1,6 @@
 use std::fmt::Display;
 
-use crate::DataType;
+use super::DataType;
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -44,3 +44,4 @@ impl Display for Error {
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
+

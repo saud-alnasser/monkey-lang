@@ -1,6 +1,6 @@
 use std::{collections::HashMap, fmt::Display};
 
-use super::{boolean::Boolean, integer::Integer, string::String, DataType};
+use super::{DataType, boolean::Boolean, integer::Integer, string::String};
 
 #[derive(Debug, PartialEq, Eq, Hash, Clone)]
 pub enum ObjectKey {
@@ -81,3 +81,4 @@ impl Display for Object {
         write!(f, "{}", output)
     }
 }
+

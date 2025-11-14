@@ -1,11 +1,11 @@
 use super::error::Error;
-use crate::{Array, DataType, Function, Integer};
+use crate::runtime::datatype::{Array, DataType, Function, Integer};
 
 /// returns the length of the given string or array
 pub const fn len<'a>() -> (&'a str, DataType) {
     (
         "len",
-        DataType::Function(Function::Native(|args| {
+        DataType::Function(Function::new(|args| {
             if args.len() != 1 {
                 return Err(Error::ExtraArguments {
                     builtin: "len".into(),
@@ -32,7 +32,7 @@ pub const fn len<'a>() -> (&'a str, DataType) {
 pub const fn first<'a>() -> (&'a str, DataType) {
     (
         "first",
-        DataType::Function(Function::Native(|args| {
+        DataType::Function(Function::new(|args| {
             if args.len() != 1 {
                 return Err(Error::ExtraArguments {
                     builtin: "first".into(),
@@ -64,7 +64,7 @@ pub const fn first<'a>() -> (&'a str, DataType) {
 pub const fn last<'a>() -> (&'a str, DataType) {
     (
         "last",
-        DataType::Function(Function::Native(|args| {
+        DataType::Function(Function::new(|args| {
             if args.len() != 1 {
                 return Err(Error::ExtraArguments {
                     builtin: "last".into(),
@@ -96,7 +96,7 @@ pub const fn last<'a>() -> (&'a str, DataType) {
 pub const fn rest<'a>() -> (&'a str, DataType) {
     (
         "rest",
-        DataType::Function(Function::Native(|args| {
+        DataType::Function(Function::new(|args| {
             if args.len() != 1 {
                 return Err(Error::ExtraArguments {
                     builtin: "rest".into(),
@@ -128,7 +128,7 @@ pub const fn rest<'a>() -> (&'a str, DataType) {
 pub const fn push<'a>() -> (&'a str, DataType) {
     (
         "push",
-        DataType::Function(Function::Native(|args| {
+        DataType::Function(Function::new(|args| {
             if args.len() != 2 {
                 return Err(Error::ExtraArguments {
                     builtin: "push".into(),
@@ -160,7 +160,7 @@ pub const fn push<'a>() -> (&'a str, DataType) {
 pub const fn puts<'a>() -> (&'a str, DataType) {
     (
         "puts",
-        DataType::Function(Function::Native(|args| {
+        DataType::Function(Function::new(|args| {
             for arg in args {
                 println!("{}", arg);
             }

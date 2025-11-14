@@ -1,6 +1,6 @@
 use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
-use crate::{builtins, DataType};
+use crate::runtime::{builtins::builtins, datatype::DataType};
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct Environment {
@@ -44,3 +44,4 @@ impl Environment {
         self.store.insert(key.into(), value);
     }
 }
+

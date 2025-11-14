@@ -33,3 +33,4 @@ impl DerefMut for Boolean {
         &mut self.value
     }
 }
+
