@@ -2,7 +2,7 @@ use std::fmt::Display;
 
 use internment::Intern;
 
-use super::{DataType, Expression, Token};
+use super::{BinaryOperator, DataType, Expression, UnaryOperator};
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -11,9 +11,9 @@ pub enum Error {
     IndexTypeMismatch(DataType),
     NonCallable(DataType),
     ObjectKeyTypeMismatch(Expression),
-    PrefixIntegerTypeMismatch(Token, DataType),
-    PrefixBooleanTypeMismatch(Token, DataType),
-    InfixTypeMismatch(Token, DataType, DataType),
+    PrefixIntegerTypeMismatch(UnaryOperator, DataType),
+    PrefixBooleanTypeMismatch(UnaryOperator, DataType),
+    InfixTypeMismatch(BinaryOperator, DataType, DataType),
     BuiltinFunction(#[from] crate::builtins::error::Error),
 }
 

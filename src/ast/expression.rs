@@ -2,7 +2,7 @@ use std::fmt::Display;
 
 use internment::Intern;
 
-use super::{Statement, Token};
+use super::{BinaryOperator, Statement, UnaryOperator};
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum Expression {
@@ -262,7 +262,7 @@ impl Display for IdentifierExpression {
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct PrefixExpression {
-    pub operator: Token,
+    pub operator: UnaryOperator,
     pub right: Box<Expression>,
 }
 
@@ -274,7 +274,7 @@ impl Display for PrefixExpression {
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct InfixExpression {
-    pub operator: Token,
+    pub operator: BinaryOperator,
     pub left: Box<Expression>,
     pub right: Box<Expression>,
 }

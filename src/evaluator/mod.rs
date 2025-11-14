@@ -249,9 +249,8 @@ fn prefix(expr: PrefixExpression, env: Rc<RefCell<Environment>>) -> Result<Tagge
     if let DataType::Integer(value) = &right {
         return Ok((
             match operator {
-                Token::BANG => DataType::Boolean(Boolean::new(**value == 0)),
-                Token::MINUS => DataType::Integer(Integer::new(-**value)),
-                _ => Err(Error::PrefixIntegerTypeMismatch(operator, right))?,
+                UnaryOperator::Not => DataType::Boolean(Boolean::new(**value == 0)),
+                UnaryOperator::Negate => DataType::Integer(Integer::new(-**value)),
             },
             Tag::Literal,
         ));
@@ -260,7 +259,7 @@ fn prefix(expr: PrefixExpression, env: Rc<RefCell<Environment>>) -> Result<Tagge
     if let DataType::Boolean(value) = &right {
         return Ok((
             match operator {
-                Token::BANG => DataType::Boolean(Boolean::new(!**value)),
+                UnaryOperator::Not => DataType::Boolean(Boolean::new(!**value)),
                 _ => Err(Error::PrefixBooleanTypeMismatch(operator, right))?,
             },
             Tag::Literal,
@@ -281,17 +280,30 @@ fn infix(expr: InfixExpression, env: Rc<RefCell<Environment>>) -> Result<Tagged<
 
         return Ok((
             match operator {
-                Token::PLUS => DataType::Integer(Integer::new(left_value + right_value)),
-                Token::MINUS => DataType::Integer(Integer::new(left_value - right_value)),
-                Token::ASTERISK => DataType::Integer(Integer::new(left_value * right_value)),
-                Token::SLASH => DataType::Integer(Integer::new(left_value / right_value)),
-                Token::LT => DataType::Boolean(Boolean::new(left_value < right_value)),
-                Token::GT => DataType::Boolean(Boolean::new(left_value > right_value)),
-                Token::LTE => DataType::Boolean(Boolean::new(left_value <= right_value)),
-                Token::GTE => DataType::Boolean(Boolean::new(left_value >= right_value)),
-                Token::EQ => DataType::Boolean(Boolean::new(left_value == right_value)),
-                Token::NEQ => DataType::Boolean(Boolean::new(left_value != right_value)),
-                _ => Err(Error::InfixTypeMismatch(operator, left, right))?,
+                BinaryOperator::Add => DataType::Integer(Integer::new(left_value + right_value)),
+                BinaryOperator::Subtract => {
+                    DataType::Integer(Integer::new(left_value - right_value))
+                }
+                BinaryOperator::Multiply => {
+                    DataType::Integer(Integer::new(left_value * right_value))
+                }
+                BinaryOperator::Divide => DataType::Integer(Integer::new(left_value / right_value)),
+                BinaryOperator::LessThan => {
+                    DataType::Boolean(Boolean::new(left_value < right_value))
+                }
+                BinaryOperator::GreaterThan => {
+                    DataType::Boolean(Boolean::new(left_value > right_value))
+                }
+                BinaryOperator::LessThanOrEqual => {
+                    DataType::Boolean(Boolean::new(left_value <= right_value))
+                }
+                BinaryOperator::GreaterThanOrEqual => {
+                    DataType::Boolean(Boolean::new(left_value >= right_value))
+                }
+                BinaryOperator::Equal => DataType::Boolean(Boolean::new(left_value == right_value)),
+                BinaryOperator::NotEqual => {
+                    DataType::Boolean(Boolean::new(left_value != right_value))
+                }
             },
             Tag::Literal,
         ));
@@ -303,8 +315,10 @@ fn infix(expr: InfixExpression, env: Rc<RefCell<Environment>>) -> Result<Tagged<
 
         return Ok((
             match operator {
-                Token::EQ => DataType::Boolean(Boolean::new(left_value == right_value)),
-                Token::NEQ => DataType::Boolean(Boolean::new(left_value != right_value)),
+                BinaryOperator::Equal => DataType::Boolean(Boolean::new(left_value == right_value)),
+                BinaryOperator::NotEqual => {
+                    DataType::Boolean(Boolean::new(left_value != right_value))
+                }
                 _ => Err(Error::InfixTypeMismatch(operator, left, right))?,
             },
             Tag::Literal,
@@ -312,7 +326,7 @@ fn infix(expr: InfixExpression, env: Rc<RefCell<Environment>>) -> Result<Tagged<
     }
 
     if let (DataType::String(left), DataType::String(right)) = (&left, &right) {
-        if operator == Token::PLUS {
+        if operator == BinaryOperator::Add {
             return Ok((
                 DataType::String(String::new(format!("{}{}", left, right).into())),
                 Tag::Literal,
