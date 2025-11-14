@@ -1,3 +1,9 @@
+## 0.0.17 (2025-11-14)
+
+### Features
+
+#### upgrade chumsky to v0.11.2 and simplify AST structure (#112)
+
 ## 0.0.16 (2025-10-20)
 
 ### Features

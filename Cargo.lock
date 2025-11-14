@@ -109,7 +109,7 @@ checksum = "f52b00d39961fc5b2736ea853c9cc86238e165017a493d1d5c8eac6bdc4cc273"
 
 [[package]]
 name = "monkey-lang"
-version = "0.0.16"
+version = "0.0.17"
 dependencies = [
  "ariadne",
  "chumsky",
