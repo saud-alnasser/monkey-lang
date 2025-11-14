@@ -5,7 +5,7 @@ use std::{cell::RefCell, collections::HashMap, rc::Rc};
 use error::Error;
 
 use self::error::Result;
-use crate::{ast::*, datatype::*, Environment};
+use crate::{Environment, ast::*, datatype::*};
 
 #[derive(Debug, PartialEq, Clone)]
 enum Tag {
@@ -16,10 +16,10 @@ enum Tag {
 
 type Tagged<T> = (T, Tag);
 
-pub fn execute(program: Program, env: Rc<RefCell<Environment>>) -> Result<DataType> {
+pub fn execute(statements: Vec<Statement>, env: Rc<RefCell<Environment>>) -> Result<DataType> {
     let mut result: Tagged<DataType> = (DataType::Undefined, Tag::Literal);
 
-    for stmt in program.statements {
+    for stmt in statements {
         result = statement(stmt, Rc::clone(&env))?;
 
         if let Tag::Return = result.1 {
@@ -352,10 +352,10 @@ mod tests {
 
         for (input, expected) in tests {
             let tokens = lexer::parse(input).unwrap();
-            let program = parser::parse(tokens).unwrap();
+            let statements = parser::parse(&tokens).unwrap();
             let env = Rc::new(RefCell::new(Environment::new(None)));
 
-            match execute(program, env) {
+            match execute(statements, env) {
                 Ok(DataType::Integer(value)) => assert_eq!(*value, expected),
                 _ => panic!("expected an integer, got something else"),
             }
@@ -368,7 +368,7 @@ mod tests {
 
         for (input, expected) in tests {
             let tokens = lexer::parse(input).unwrap();
-            let program = parser::parse(tokens).unwrap();
+            let program = parser::parse(&tokens).unwrap();
             let env = Rc::new(RefCell::new(Environment::new(None)));
 
             match execute(program, env) {
@@ -384,7 +384,7 @@ mod tests {
 
         for (input, expected) in tests {
             let tokens = lexer::parse(input).unwrap();
-            let program = parser::parse(tokens).unwrap();
+            let program = parser::parse(&tokens).unwrap();
             let env = Rc::new(RefCell::new(Environment::new(None)));
 
             match execute(program, env) {
@@ -436,7 +436,7 @@ mod tests {
 
         for (input, expected) in tests {
             let tokens = lexer::parse(input).unwrap();
-            let program = parser::parse(tokens).unwrap();
+            let program = parser::parse(&tokens).unwrap();
             let env = Rc::new(RefCell::new(Environment::new(None)));
 
             match execute(program, env) {
@@ -456,7 +456,7 @@ mod tests {
 
         for (input, expected) in tests {
             let tokens = lexer::parse(input).unwrap();
-            let program = parser::parse(tokens).unwrap();
+            let program = parser::parse(&tokens).unwrap();
             let env = Rc::new(RefCell::new(Environment::new(None)));
 
             match execute(program, env) {
@@ -494,7 +494,7 @@ mod tests {
 
         for (input, expected) in tests {
             let tokens = lexer::parse(input).unwrap();
-            let program = parser::parse(tokens).unwrap();
+            let program = parser::parse(&tokens).unwrap();
             let env = Rc::new(RefCell::new(Environment::new(None)));
 
             match execute(program, env) {
@@ -519,7 +519,7 @@ mod tests {
 
         for (input, expected) in tests {
             let tokens = lexer::parse(input).unwrap();
-            let program = parser::parse(tokens).unwrap();
+            let program = parser::parse(&tokens).unwrap();
             let env = Rc::new(RefCell::new(Environment::new(None)));
 
             match execute(program, env) {
@@ -551,7 +551,7 @@ mod tests {
 
         for (input, expected) in tests {
             let tokens = lexer::parse(input).unwrap();
-            let program = parser::parse(tokens).unwrap();
+            let program = parser::parse(&tokens).unwrap();
             let env = Rc::new(RefCell::new(Environment::new(None)));
 
             match execute(program, env) {
@@ -572,7 +572,7 @@ mod tests {
 
         for (input, expected) in tests {
             let tokens = lexer::parse(input).unwrap();
-            let program = parser::parse(tokens).unwrap();
+            let program = parser::parse(&tokens).unwrap();
             let env = Rc::new(RefCell::new(Environment::new(None)));
 
             match execute(program, env) {
@@ -587,7 +587,7 @@ mod tests {
         let input = "fn(x) { x + 2; };";
 
         let tokens = lexer::parse(input).unwrap();
-        let program = parser::parse(tokens).unwrap();
+        let program = parser::parse(&tokens).unwrap();
         let env = Rc::new(RefCell::new(Environment::new(None)));
 
         match execute(program, env) {
@@ -627,7 +627,7 @@ mod tests {
 
         for (input, expected) in inputs {
             let tokens = lexer::parse(input).unwrap();
-            let program = parser::parse(tokens).unwrap();
+            let program = parser::parse(&tokens).unwrap();
             let env = Rc::new(RefCell::new(Environment::new(None)));
 
             let result = execute(program, Rc::clone(&env)).unwrap();
@@ -649,7 +649,7 @@ mod tests {
 
         for (input, expected) in tests {
             let tokens = lexer::parse(input).unwrap();
-            let program = parser::parse(tokens).unwrap();
+            let program = parser::parse(&tokens).unwrap();
             let env = Rc::new(RefCell::new(Environment::new(None)));
 
             match execute(program, env) {
@@ -665,7 +665,7 @@ mod tests {
             "let new_adder = fn(x) { fn(y) { x + y; }; }; let add_two = new_adder(2); add_two(2);";
 
         let tokens = lexer::parse(input).unwrap();
-        let program = parser::parse(tokens).unwrap();
+        let program = parser::parse(&tokens).unwrap();
         let env = Rc::new(RefCell::new(Environment::new(None)));
 
         match execute(program, env) {
@@ -680,7 +680,7 @@ mod tests {
 
         for (input, expected) in tests {
             let tokens = lexer::parse(input).unwrap();
-            let program = parser::parse(tokens).unwrap();
+            let program = parser::parse(&tokens).unwrap();
             let env = Rc::new(RefCell::new(Environment::new(None)));
 
             match execute(program, env) {
@@ -702,7 +702,7 @@ mod tests {
 
         for (input, expected) in test_errors {
             let tokens = lexer::parse(input).unwrap();
-            let program = parser::parse(tokens).unwrap();
+            let program = parser::parse(&tokens).unwrap();
             let env = Rc::new(RefCell::new(Environment::new(None)));
 
             match execute(program, env) {
@@ -724,7 +724,7 @@ mod tests {
 
         for (input, expected) in tests {
             let tokens = lexer::parse(input).unwrap();
-            let program = parser::parse(tokens).unwrap();
+            let program = parser::parse(&tokens).unwrap();
             let env = Rc::new(RefCell::new(Environment::new(None)));
 
             match execute(program, env) {
@@ -747,7 +747,7 @@ mod tests {
 
         for (input, expected) in test_errors {
             let tokens = lexer::parse(input).unwrap();
-            let program = parser::parse(tokens).unwrap();
+            let program = parser::parse(&tokens).unwrap();
             let env = Rc::new(RefCell::new(Environment::new(None)));
 
             match execute(program, env) {
@@ -769,7 +769,7 @@ mod tests {
 
         for (input, expected) in tests {
             let tokens = lexer::parse(input).unwrap();
-            let program = parser::parse(tokens).unwrap();
+            let program = parser::parse(&tokens).unwrap();
             let env = Rc::new(RefCell::new(Environment::new(None)));
 
             match execute(program, env) {
@@ -792,7 +792,7 @@ mod tests {
 
         for (input, expected) in test_errors {
             let tokens = lexer::parse(input).unwrap();
-            let program = parser::parse(tokens).unwrap();
+            let program = parser::parse(&tokens).unwrap();
             let env = Rc::new(RefCell::new(Environment::new(None)));
 
             match execute(program, env) {
@@ -814,7 +814,7 @@ mod tests {
 
         for (input, expected) in tests {
             let tokens = lexer::parse(input).unwrap();
-            let program = parser::parse(tokens).unwrap();
+            let program = parser::parse(&tokens).unwrap();
             let env = Rc::new(RefCell::new(Environment::new(None)));
 
             match execute(program, env) {
@@ -848,7 +848,7 @@ mod tests {
 
         for (input, expected) in test_errors {
             let tokens = lexer::parse(input).unwrap();
-            let program = parser::parse(tokens).unwrap();
+            let program = parser::parse(&tokens).unwrap();
             let env = Rc::new(RefCell::new(Environment::new(None)));
 
             match execute(program, env) {
@@ -869,7 +869,7 @@ mod tests {
 
         for (input, expected) in tests {
             let tokens = lexer::parse(input).unwrap();
-            let program = parser::parse(tokens).unwrap();
+            let program = parser::parse(&tokens).unwrap();
             let env = Rc::new(RefCell::new(Environment::new(None)));
 
             match execute(program, env) {
@@ -902,7 +902,7 @@ mod tests {
 
         for (input, expected) in test_errors {
             let tokens = lexer::parse(input).unwrap();
-            let program = parser::parse(tokens).unwrap();
+            let program = parser::parse(&tokens).unwrap();
             let env = Rc::new(RefCell::new(Environment::new(None)));
 
             match execute(program, env) {

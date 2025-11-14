@@ -1,38 +1,24 @@
-pub mod error;
+use chumsky::{Parser, prelude::*};
 
-use chumsky::{prelude::*, Parser};
-
-use crate::{
-    ast::{
-        ArrayExpression, BlockExpression, BooleanExpression, CallExpression, Expression,
-        FunctionExpression, IdentifierExpression, IfExpression, IndexExpression, InfixExpression,
-        IntExpression, ObjectExpression, PrefixExpression, Program, Spanned, Statement,
-        StringExpression, Token,
-    },
-    parser::error::{Error, Result},
+use crate::ast::{
+    ArrayExpression, BlockExpression, BooleanExpression, CallExpression, Expression,
+    FunctionExpression, IdentifierExpression, IfExpression, IndexExpression, InfixExpression,
+    IntExpression, ObjectExpression, PrefixExpression, Statement, StringExpression, Token,
 };
 
-pub fn parse(tokens: Vec<Spanned<Token>>) -> Result<Program> {
-    let tokens = tokens
-        .into_iter()
-        .map(|(token, _)| token)
-        .collect::<Vec<Token>>();
-
-    let statements = statement()
+pub fn parse(tokens: &[Token]) -> ParseResult<Vec<Statement>, Rich<'_, Token>> {
+    statement()
         .repeated()
+        .collect::<Vec<Statement>>()
         .then_ignore(end())
-        .collect()
         .parse(tokens)
-        .map_err(|errors| errors.into_iter().map(Error::from).collect::<Vec<Error>>())?;
-
-    Ok(Program { statements })
 }
 
-fn statement() -> impl Parser<Token, Statement, Error = Simple<Token>> + Clone {
+fn statement<'src>() -> impl Parser<'src, &'src [Token], Statement, extra::Err<Rich<'src, Token>>> {
     recursive(|stmt| {
-        let expression = recursive(|expr: Recursive<'_, Token, Expression, Simple<Token>>| {
+        let expression = recursive(|expr| {
             let int = select! {
-                Token::INT(value) => IntExpression { value: value.parse().unwrap() },
+                Token::INT(value) => IntExpression { value },
             }
             .labelled("integer");
 
@@ -54,6 +40,7 @@ fn statement() -> impl Parser<Token, Statement, Error = Simple<Token>> + Clone {
 
             let block = stmt
                 .repeated()
+                .collect::<Vec<Statement>>()
                 .delimited_by(just(Token::LBRACE), just(Token::RBRACE))
                 .map(|statements| BlockExpression { statements });
 
@@ -62,6 +49,7 @@ fn statement() -> impl Parser<Token, Statement, Error = Simple<Token>> + Clone {
                 .then_ignore(just(Token::COLON))
                 .then(expr.clone())
                 .separated_by(just(Token::COMMA))
+                .collect::<Vec<(Expression, Expression)>>()
                 .delimited_by(just(Token::LBRACE), just(Token::RBRACE))
                 .map(|pairs| ObjectExpression { pairs });
 
@@ -69,6 +57,7 @@ fn statement() -> impl Parser<Token, Statement, Error = Simple<Token>> + Clone {
                 .ignore_then(
                     identifier
                         .separated_by(just(Token::COMMA))
+                        .collect::<Vec<IdentifierExpression>>()
                         .delimited_by(just(Token::LPAREN), just(Token::RPAREN)),
                 )
                 .then(block.clone())
@@ -80,6 +69,7 @@ fn statement() -> impl Parser<Token, Statement, Error = Simple<Token>> + Clone {
             let array = expr
                 .clone()
                 .separated_by(just(Token::COMMA))
+                .collect::<Vec<Expression>>()
                 .delimited_by(just(Token::LBRACKET), just(Token::RBRACKET))
                 .map(|elements| ArrayExpression { elements });
 
@@ -115,108 +105,99 @@ fn statement() -> impl Parser<Token, Statement, Error = Simple<Token>> + Clone {
             let unary = just(Token::MINUS)
                 .or(just(Token::BANG))
                 .repeated()
-                .then(atom.clone())
-                .foldr(|op, rhs| {
-                    Expression::Prefix(PrefixExpression {
-                        operator: op,
-                        right: Box::new(rhs),
+                .collect::<Vec<Token>>()
+                .then(atom)
+                .map(|(ops, expr)| {
+                    ops.into_iter().rev().fold(expr, |acc, op| {
+                        Expression::Prefix(PrefixExpression {
+                            operator: op,
+                            right: Box::new(acc),
+                        })
                     })
                 });
 
-            let call = unary
-                .clone()
-                .then(
-                    expr.clone()
-                        .separated_by(just(Token::COMMA))
-                        .delimited_by(just(Token::LPAREN), just(Token::RPAREN))
-                        .repeated(),
-                )
-                .foldl(|callable, arguments| {
+            let call = unary.foldl(
+                expr.clone()
+                    .separated_by(just(Token::COMMA))
+                    .collect::<Vec<Expression>>()
+                    .delimited_by(just(Token::LPAREN), just(Token::RPAREN))
+                    .repeated(),
+                |callable, arguments| {
                     Expression::Call(CallExpression {
                         callable: Box::new(callable),
                         arguments,
                     })
-                });
+                },
+            );
 
-            let index = call
-                .clone()
-                .then(
-                    expr.clone()
-                        .delimited_by(just(Token::LBRACKET), just(Token::RBRACKET))
-                        .repeated(),
-                )
-                .foldl(|left, index| {
+            let index = call.clone().foldl(
+                expr.delimited_by(just(Token::LBRACKET), just(Token::RBRACKET))
+                    .repeated(),
+                |left, index| {
                     Expression::Index(IndexExpression {
                         left: Box::new(left),
                         index: Box::new(index),
                     })
-                });
+                },
+            );
 
-            let product = index
-                .clone()
-                .then(
-                    just(Token::ASTERISK)
-                        .or(just(Token::SLASH))
-                        .then(index)
-                        .repeated(),
-                )
-                .foldl(|lhs, (op, rhs)| {
+            let product = index.clone().foldl(
+                just(Token::ASTERISK)
+                    .or(just(Token::SLASH))
+                    .then(index)
+                    .repeated(),
+                |lhs, (op, rhs)| {
                     Expression::Infix(InfixExpression {
                         left: Box::new(lhs),
                         operator: op,
                         right: Box::new(rhs),
                     })
-                });
+                },
+            );
 
-            let sum = product
-                .clone()
-                .then(
-                    just(Token::PLUS)
-                        .or(just(Token::MINUS))
-                        .then(product)
-                        .repeated(),
-                )
-                .foldl(|lhs, (op, rhs)| {
+            let sum = product.clone().foldl(
+                just(Token::PLUS)
+                    .or(just(Token::MINUS))
+                    .then(product)
+                    .repeated(),
+                |lhs, (op, rhs)| {
                     Expression::Infix(InfixExpression {
                         left: Box::new(lhs),
                         operator: op,
                         right: Box::new(rhs),
                     })
-                });
+                },
+            );
 
-            let comparison = sum
-                .clone()
-                .then(
-                    just(Token::LT)
-                        .or(just(Token::GT))
-                        .or(just(Token::LTE))
-                        .or(just(Token::GTE))
-                        .then(sum)
-                        .repeated(),
-                )
-                .foldl(|lhs, (op, rhs)| {
+            let comparison = sum.clone().foldl(
+                just(Token::LT)
+                    .or(just(Token::GT))
+                    .or(just(Token::LTE))
+                    .or(just(Token::GTE))
+                    .then(sum)
+                    .repeated(),
+                |lhs, (op, rhs)| {
                     Expression::Infix(InfixExpression {
                         left: Box::new(lhs),
                         operator: op,
                         right: Box::new(rhs),
                     })
-                });
+                },
+            );
 
-            let equality = comparison
-                .clone()
-                .then(
-                    just(Token::EQ)
-                        .or(just(Token::NEQ))
-                        .then(comparison)
-                        .repeated(),
-                )
-                .foldl(|lhs, (op, rhs)| {
+            let equality = comparison.clone().foldl(
+                just(Token::EQ)
+                    .or(just(Token::NEQ))
+                    .then(comparison)
+                    .repeated(),
+                |lhs, (op, rhs)| {
                     Expression::Infix(InfixExpression {
                         left: Box::new(lhs),
                         operator: op,
                         right: Box::new(rhs),
                     })
-                });
+                },
+            );
 
             equality
         });
@@ -259,11 +240,11 @@ mod tests {
             Token::LET,
             Token::IDENTIFIER(Intern::new("x".into())),
             Token::ASSIGN,
-            Token::INT(Intern::new("5".into())),
+            Token::INT(5),
             Token::SEMICOLON,
         ];
 
-        let stmt = statement().parse(input).unwrap();
+        let stmt = statement().parse(&input).unwrap();
 
         match stmt {
             Statement::Let {
@@ -285,13 +266,9 @@ mod tests {
 
     #[test]
     fn test_return() {
-        let input = vec![
-            Token::RETURN,
-            Token::INT(Intern::new("5".into())),
-            Token::SEMICOLON,
-        ];
+        let input = vec![Token::RETURN, Token::INT(5), Token::SEMICOLON];
 
-        let stmt = statement().parse(input).unwrap();
+        let stmt = statement().parse(&input).unwrap();
 
         match stmt {
             Statement::Return(expression) => match expression {
@@ -307,12 +284,12 @@ mod tests {
         let input = vec![
             Token::IDENTIFIER(Intern::new("array".into())),
             Token::LBRACKET,
-            Token::INT(Intern::new("1".into())),
+            Token::INT(1),
             Token::RBRACKET,
             Token::SEMICOLON,
         ];
 
-        let stmt = statement().parse(input).unwrap();
+        let stmt = statement().parse(&input).unwrap();
 
         match stmt {
             Statement::Expression(Expression::Index(expression)) => {
@@ -337,14 +314,14 @@ mod tests {
         let input = vec![
             Token::IDENTIFIER(Intern::new("add".into())),
             Token::LPAREN,
-            Token::INT(Intern::new("1".into())),
+            Token::INT(1),
             Token::COMMA,
-            Token::INT(Intern::new("2".into())),
+            Token::INT(2),
             Token::RPAREN,
             Token::SEMICOLON,
         ];
 
-        let stmt = statement().parse(input).unwrap();
+        let stmt = statement().parse(&input).unwrap();
 
         match stmt {
             Statement::Expression(Expression::Call(expression)) => {
@@ -372,13 +349,13 @@ mod tests {
         let input = vec![
             Token::LBRACE,
             Token::RETURN,
-            Token::INT(Intern::new("5".into())),
+            Token::INT(5),
             Token::SEMICOLON,
             Token::RBRACE,
             Token::SEMICOLON,
         ];
 
-        let stmt = statement().parse(input).unwrap();
+        let stmt = statement().parse(&input).unwrap();
 
         match stmt {
             Statement::Expression(Expression::Block(expression)) => {
@@ -399,20 +376,20 @@ mod tests {
             Token::LBRACE,
             Token::STRING(Intern::new("one".into())),
             Token::COLON,
-            Token::INT(Intern::new("1".into())),
+            Token::INT(1),
             Token::COMMA,
             Token::STRING(Intern::new("two".into())),
             Token::COLON,
-            Token::INT(Intern::new("2".into())),
+            Token::INT(2),
             Token::COMMA,
             Token::STRING(Intern::new("three".into())),
             Token::COLON,
-            Token::INT(Intern::new("3".into())),
+            Token::INT(3),
             Token::RBRACE,
             Token::SEMICOLON,
         ];
 
-        let stmt = statement().parse(input).unwrap();
+        let stmt = statement().parse(&input).unwrap();
 
         match stmt {
             Statement::Expression(Expression::Object(expression)) => {
@@ -452,13 +429,13 @@ mod tests {
             Token::RPAREN,
             Token::LBRACE,
             Token::RETURN,
-            Token::INT(Intern::new("5".into())),
+            Token::INT(5),
             Token::SEMICOLON,
             Token::RBRACE,
             Token::SEMICOLON,
         ];
 
-        let stmt = statement().parse(input).unwrap();
+        let stmt = statement().parse(&input).unwrap();
 
         match stmt {
             Statement::Expression(Expression::Function(expression)) => {
@@ -479,17 +456,17 @@ mod tests {
         let input = vec![
             Token::LBRACKET,
             Token::LBRACKET,
-            Token::INT(Intern::new("1".into())),
+            Token::INT(1),
             Token::RBRACKET,
             Token::COMMA,
-            Token::INT(Intern::new("2".into())),
+            Token::INT(2),
             Token::COMMA,
-            Token::INT(Intern::new("3".into())),
+            Token::INT(3),
             Token::RBRACKET,
             Token::SEMICOLON,
         ];
 
-        let stmt = statement().parse(input).unwrap();
+        let stmt = statement().parse(&input).unwrap();
 
         match stmt {
             Statement::Expression(Expression::Array(expression)) => {
@@ -517,19 +494,19 @@ mod tests {
             Token::RPAREN,
             Token::LBRACE,
             Token::RETURN,
-            Token::INT(Intern::new("5".into())),
+            Token::INT(5),
             Token::SEMICOLON,
             Token::RBRACE,
             Token::ELSE,
             Token::LBRACE,
             Token::RETURN,
-            Token::INT(Intern::new("10".into())),
+            Token::INT(10),
             Token::SEMICOLON,
             Token::RBRACE,
             Token::SEMICOLON,
         ];
 
-        let stmt = statement().parse(input).unwrap();
+        let stmt = statement().parse(&input).unwrap();
 
         match stmt {
             Statement::Expression(Expression::If(expression)) => {
@@ -559,7 +536,7 @@ mod tests {
     #[test]
     fn test_boolean() {
         let input = vec![Token::TRUE, Token::SEMICOLON];
-        let stmt = statement().parse(input).unwrap();
+        let stmt = statement().parse(&input).unwrap();
 
         match stmt {
             Statement::Expression(Expression::Boolean(expression)) => {
@@ -569,7 +546,7 @@ mod tests {
         }
 
         let input = vec![Token::FALSE, Token::SEMICOLON];
-        let stmt = self::statement().parse(input).unwrap();
+        let stmt = statement().parse(&input).unwrap();
 
         match stmt {
             Statement::Expression(Expression::Boolean(expression)) => {
@@ -581,8 +558,8 @@ mod tests {
 
     #[test]
     fn test_int() {
-        let input = vec![Token::INT(Intern::new("5".into())), Token::SEMICOLON];
-        let stmt = statement().parse(input).unwrap();
+        let input = vec![Token::INT(5), Token::SEMICOLON];
+        let stmt = statement().parse(&input).unwrap();
 
         match stmt {
             Statement::Expression(Expression::Int(expression)) => {
@@ -598,7 +575,7 @@ mod tests {
             Token::STRING(Intern::new("hello, world!".into())),
             Token::SEMICOLON,
         ];
-        let stmt = statement().parse(input).unwrap();
+        let stmt = statement().parse(&input).unwrap();
 
         match stmt {
             Statement::Expression(Expression::String(expression)) => {
@@ -614,7 +591,7 @@ mod tests {
             Token::IDENTIFIER(Intern::new("ident".into())),
             Token::SEMICOLON,
         ];
-        let stmt = statement().parse(input).unwrap();
+        let stmt = statement().parse(&input).unwrap();
 
         match stmt {
             Statement::Expression(Expression::Identifier(expression)) => {
@@ -626,13 +603,9 @@ mod tests {
 
     #[test]
     fn test_prefix_expression() {
-        let input = vec![
-            Token::MINUS,
-            Token::INT(Intern::new("5".into())),
-            Token::SEMICOLON,
-        ];
+        let input = vec![Token::MINUS, Token::INT(5), Token::SEMICOLON];
 
-        let stmt = statement().parse(input).unwrap();
+        let stmt = statement().parse(&input).unwrap();
 
         match stmt {
             Statement::Expression(Expression::Prefix(expression)) => {
@@ -650,14 +623,9 @@ mod tests {
 
     #[test]
     fn test_infix_expression() {
-        let input = vec![
-            Token::INT(Intern::new("5".into())),
-            Token::PLUS,
-            Token::INT(Intern::new("5".into())),
-            Token::SEMICOLON,
-        ];
+        let input = vec![Token::INT(5), Token::PLUS, Token::INT(5), Token::SEMICOLON];
 
-        let stmt = statement().parse(input).unwrap();
+        let stmt = statement().parse(&input).unwrap();
 
         match stmt {
             Statement::Expression(Expression::Infix(expression)) => {
