@@ -5,8 +5,7 @@ use std::{
 };
 
 use crate::{
-    ast::lexer,
-    ast::parser,
+    ast::{lexer, parser},
     ir::{interpreter, program::Program, transpiler},
     runtime::{DataType, Environment},
 };
@@ -53,13 +52,14 @@ impl REPL {
             match lexer::parse(&code).into_result() {
                 Ok(tokens) => match parser::parse(&tokens).into_result() {
                     Ok(statements) => match transpiler::transpile(statements) {
-                        Ok(new_program) => {
-                            for (label, block) in new_program.blocks {
-                                self.program.blocks.insert(label, block);
-                            }
-                            self.program.entry_label = new_program.entry_label;
+                        Ok(other) => {
+                            let entry = self.program.merge(other);
 
-                            match interpreter::execute(self.program.clone(), Rc::clone(&self.env)) {
+                            match interpreter::execute_from(
+                                self.program.clone(),
+                                self.env.clone(),
+                                entry,
+                            ) {
                                 Ok(DataType::Undefined) => (),
                                 Ok(data) => println!("{}", data),
                                 Err(error) => eprintln!("runtime error: {}", error),

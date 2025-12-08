@@ -11,6 +11,7 @@ use crate::runtime::environment::Environment;
 
 pub use error::{Error, Result};
 
+/// an interpreter executes a program on a given environment and returns a value
 pub struct Interpreter {
     program: Program,
     env: Rc<RefCell<Environment>>,
@@ -26,179 +27,21 @@ impl Interpreter {
         }
     }
 
-    /// Execute the IR program
-    pub fn execute(mut self) -> Result<DataType> {
-        let entry = self.program.entry_label.clone();
-        self.execute_block(&entry)
-    }
+    /// executes a block of instructions to a data-type
+    pub fn execute(&mut self, label: &Label) -> Result<DataType> {
+        if let Some(block) = self.program.get(label).cloned() {
+            for instruction in &block.instructions {
+                instruction.interpret(self)?;
+            }
 
-    /// Execute a basic block
-    fn execute_block(&mut self, label: &Label) -> Result<DataType> {
-        let block = self
-            .program
-            .get_block(label)
-            .ok_or_else(|| Error::InvalidLabel(label.clone()))?
-            .clone();
-
-        // Execute all instruction s
-        for instr in block.instructions {
-            self.execute_instruction(instr)?;
+            return block.terminator.interpret(self);
         }
 
-        // Execute terminator
-        self.execute_terminator(block.terminator)
+        Ok(DataType::Undefined)
     }
 
-    /// Execute a single instruction
-    fn execute_instruction(&mut self, instr: Instruction) -> Result<()> {
-        match instr {
-            Instruction::Assign { dest, value } => {
-                let val = self.eval_value(value)?;
-                self.temps.insert(dest, val);
-            }
-
-            Instruction::Binary {
-                dest,
-                op,
-                left,
-                right,
-            } => {
-                let l = self.eval_value(left)?;
-                let r = self.eval_value(right)?;
-                let result = self.eval_binary(op, l, r)?;
-                self.temps.insert(dest, result);
-            }
-
-            Instruction::Unary { dest, op, operand } => {
-                let val = self.eval_value(operand)?;
-                let result = self.eval_unary(op, val)?;
-                self.temps.insert(dest, result);
-            }
-
-            Instruction::StoreVar { name, value } => {
-                let val = self.eval_value(value)?;
-                self.env.borrow_mut().set(&name, val);
-            }
-
-            Instruction::LoadVar { dest, name } => {
-                let val = self
-                    .env
-                    .borrow()
-                    .get(&name)
-                    .ok_or_else(|| Error::UndefinedVariable(name))?;
-                self.temps.insert(dest, val);
-            }
-
-            Instruction::MakeArray { dest, elements } => {
-                self.temps.insert(
-                    dest,
-                    DataType::Array(Array::new(
-                        elements
-                            .into_iter()
-                            .map(|e| self.eval_value(e))
-                            .collect::<Result<Vec<_>>>()?,
-                    )),
-                );
-            }
-
-            Instruction::MakeObject { dest, pairs } => {
-                let mut map = HashMap::new();
-                for (k, v) in pairs {
-                    let key_val = self.eval_value(k)?;
-                    let value = self.eval_value(v)?;
-
-                    // Convert DataType to ObjectKey
-                    let key = match key_val {
-                        DataType::String(s) => ObjectKey::String(s),
-                        DataType::Integer(i) => ObjectKey::Integer(i),
-                        DataType::Boolean(b) => ObjectKey::Boolean(b),
-                        _ => return Err(Error::IndexTypeMismatch(key_val.name_of().to_string())),
-                    };
-
-                    map.insert(key, value);
-                }
-                self.temps.insert(dest, DataType::Object(Object::new(map)));
-            }
-
-            Instruction::MakeFunction {
-                dest,
-                params,
-                body_label,
-            } => {
-                use crate::ir::Function;
-
-                self.temps.insert(
-                    dest,
-                    DataType::Opaque(Rc::new(Function::new(
-                        params,
-                        body_label,
-                        Rc::clone(&self.env),
-                    ))),
-                );
-            }
-
-            Instruction::Call {
-                dest,
-                callable,
-                args,
-            } => {
-                let func = self.eval_value(callable)?;
-                let arguments = args
-                    .into_iter()
-                    .map(|a| self.eval_value(a))
-                    .collect::<Result<Vec<_>>>()?;
-
-                let result = self.call_function(func, arguments)?;
-                self.temps.insert(dest, result);
-            }
-
-            Instruction::Index {
-                dest,
-                indexable,
-                index,
-            } => {
-                let idx_val = self.eval_value(indexable)?;
-                let idx = self.eval_value(index)?;
-                let result = self.eval_index(idx_val, idx)?;
-                self.temps.insert(dest, result);
-            }
-        }
-
-        Ok(())
-    }
-
-    /// Execute a terminator
-    fn execute_terminator(&mut self, term: Terminator) -> Result<DataType> {
-        match term {
-            Terminator::Goto { target } => self.execute_block(&target),
-
-            Terminator::Branch {
-                condition,
-                true_label,
-                false_label,
-            } => {
-                let cond = self.eval_value(condition)?;
-                let is_true = match cond {
-                    DataType::Boolean(b) => *b,
-                    DataType::Integer(i) => *i != 0,
-                    _ => false,
-                };
-
-                let target = if is_true { true_label } else { false_label };
-                self.execute_block(&target)
-            }
-
-            Terminator::Return { value } => match value {
-                Some(v) => Ok(self.eval_value(v)?),
-                None => Ok(DataType::Undefined),
-            },
-
-            Terminator::Exit { value } => Ok(self.eval_value(value)?),
-        }
-    }
-
-    /// Evaluate a Value to a DataType
-    fn eval_value(&self, value: Value) -> Result<DataType> {
+    /// evaluate a value to a data-type
+    fn evaluate(&self, value: Value) -> Result<DataType> {
         match value {
             Value::Constant(c) => Ok(c),
             Value::Temp(t) => self
@@ -213,13 +56,35 @@ impl Interpreter {
                 .ok_or_else(|| Error::UndefinedVariable(name)),
         }
     }
+}
 
-    /// Evaluate binary operation
-    fn eval_binary(&self, op: BinaryOperator, left: DataType, right: DataType) -> Result<DataType> {
-        match (&left, &right) {
+/// generic trait for interpreting IR instructions/terminators with a shared `Interpreter` context.
+pub trait Interpret<T> {
+    /// execute this IR instruction/terminator using the given interpreter and produce a value of type `T`
+    fn interpret(&self, interpreter: &mut Interpreter) -> Result<T>;
+}
+
+impl Interpret<()> for Assign {
+    fn interpret(&self, interpreter: &mut Interpreter) -> Result<()> {
+        let val = interpreter.evaluate(self.value.clone())?;
+
+        interpreter.temps.insert(self.dest, val);
+
+        Ok(())
+    }
+}
+
+impl Interpret<()> for Binary {
+    fn interpret(&self, interpreter: &mut Interpreter) -> Result<()> {
+        let op = self.op.clone();
+        let left = interpreter.evaluate(self.left.clone())?;
+        let right = interpreter.evaluate(self.right.clone())?;
+
+        let result = match (&left, &right) {
             (DataType::Integer(l), DataType::Integer(r)) => {
                 let l = **l;
                 let r = **r;
+
                 Ok(match op {
                     BinaryOperator::Add => DataType::Integer(Integer::new(l + r)),
                     BinaryOperator::Subtract => DataType::Integer(Integer::new(l - r)),
@@ -236,6 +101,7 @@ impl Interpreter {
             (DataType::Boolean(l), DataType::Boolean(r)) => {
                 let l = **l;
                 let r = **r;
+
                 Ok(match op {
                     BinaryOperator::Equal => DataType::Boolean(Boolean::new(l == r)),
                     BinaryOperator::NotEqual => DataType::Boolean(Boolean::new(l != r)),
@@ -264,12 +130,20 @@ impl Interpreter {
                 left.name_of().to_string(),
                 right.name_of().to_string(),
             )),
-        }
-    }
+        }?;
 
-    /// Evaluate unary operation
-    fn eval_unary(&self, op: UnaryOperator, operand: DataType) -> Result<DataType> {
-        match &operand {
+        interpreter.temps.insert(self.dest, result);
+
+        Ok(())
+    }
+}
+
+impl Interpret<()> for Unary {
+    fn interpret(&self, interpreter: &mut Interpreter) -> Result<()> {
+        let op = self.op.clone();
+        let operand = interpreter.evaluate(self.operand.clone())?;
+
+        let result = match &operand {
             DataType::Integer(i) => Ok(match op {
                 UnaryOperator::Negate => DataType::Integer(Integer::new(-**i)),
                 UnaryOperator::Not => DataType::Boolean(Boolean::new(**i == 0)),
@@ -279,37 +153,109 @@ impl Interpreter {
                 _ => return Err(Error::UnaryTypeMismatch(op, operand.name_of().to_string())),
             }),
             _ => Err(Error::UnaryTypeMismatch(op, operand.name_of().to_string())),
-        }
-    }
+        }?;
 
-    /// Evaluate indexing
-    fn eval_index(&self, indexable: DataType, index: DataType) -> Result<DataType> {
-        match indexable {
-            DataType::Array(arr) => {
-                if let DataType::Integer(i) = index {
-                    let idx = *i as usize;
-                    Ok(arr.get(idx).cloned().unwrap_or(DataType::Null))
-                } else {
-                    Err(Error::IndexTypeMismatch(index.name_of().to_string()))
-                }
-            }
-            DataType::Object(obj) => {
-                // Convert DataType to ObjectKey
-                let key = match index {
-                    DataType::String(s) => ObjectKey::String(s),
-                    DataType::Integer(i) => ObjectKey::Integer(i),
-                    DataType::Boolean(b) => ObjectKey::Boolean(b),
-                    _ => return Err(Error::IndexTypeMismatch(index.name_of().to_string())),
-                };
-                Ok(obj.get(&key).cloned().unwrap_or(DataType::Null))
-            }
-            _ => Err(Error::NotIndexable(indexable.name_of().to_string())),
-        }
-    }
+        interpreter.temps.insert(self.dest, result);
 
-    /// Call a function
-    fn call_function(&mut self, func: DataType, args: Vec<DataType>) -> Result<DataType> {
-        match func {
+        Ok(())
+    }
+}
+
+impl Interpret<()> for StoreVar {
+    fn interpret(&self, interpreter: &mut Interpreter) -> Result<()> {
+        let val = interpreter.evaluate(self.value.clone())?;
+        interpreter.env.borrow_mut().set(&self.name, val);
+
+        Ok(())
+    }
+}
+
+impl Interpret<()> for LoadVar {
+    fn interpret(&self, interpreter: &mut Interpreter) -> Result<()> {
+        let val = interpreter
+            .env
+            .borrow()
+            .get(&self.name)
+            .ok_or_else(|| Error::UndefinedVariable(self.name))?;
+        interpreter.temps.insert(self.dest, val);
+
+        Ok(())
+    }
+}
+
+impl Interpret<()> for MakeArray {
+    fn interpret(&self, interpreter: &mut Interpreter) -> Result<()> {
+        let elements = self
+            .elements
+            .iter()
+            .cloned()
+            .map(|e| interpreter.evaluate(e))
+            .collect::<Result<Vec<_>>>()?;
+
+        interpreter
+            .temps
+            .insert(self.dest, DataType::Array(Array::new(elements)));
+
+        Ok(())
+    }
+}
+
+impl Interpret<()> for MakeObject {
+    fn interpret(&self, interpreter: &mut Interpreter) -> Result<()> {
+        let mut map = HashMap::new();
+
+        for (k, v) in &self.pairs {
+            let key_val = interpreter.evaluate(k.clone())?;
+            let value = interpreter.evaluate(v.clone())?;
+
+            // convert data-type to object-key
+            let key = match key_val {
+                DataType::String(s) => ObjectKey::String(s),
+                DataType::Integer(i) => ObjectKey::Integer(i),
+                DataType::Boolean(b) => ObjectKey::Boolean(b),
+                _ => return Err(Error::IndexTypeMismatch(key_val.name_of().to_string())),
+            };
+
+            map.insert(key, value);
+        }
+
+        interpreter
+            .temps
+            .insert(self.dest, DataType::Object(Object::new(map)));
+
+        Ok(())
+    }
+}
+
+impl Interpret<()> for MakeFunction {
+    fn interpret(&self, interpreter: &mut Interpreter) -> Result<()> {
+        use crate::ir::Function;
+
+        interpreter.temps.insert(
+            self.dest,
+            DataType::Opaque(Rc::new(Function::new(
+                self.params.clone(),
+                self.body,
+                Rc::clone(&interpreter.env),
+            ))),
+        );
+
+        Ok(())
+    }
+}
+
+impl Interpret<()> for Call {
+    fn interpret(&self, interpreter: &mut Interpreter) -> Result<()> {
+        let func = interpreter.evaluate(self.callable.clone())?;
+
+        let args = self
+            .args
+            .iter()
+            .cloned()
+            .map(|a| interpreter.evaluate(a))
+            .collect::<Result<Vec<_>>>()?;
+
+        let result = match func {
             DataType::Function(Function(f)) => f(args).map_err(Error::BuiltinError),
 
             DataType::Opaque(opaque) => {
@@ -321,16 +267,16 @@ impl Interpreter {
                         scoped_env.borrow_mut().set(param, arg.clone());
                     }
 
-                    let saved_env = Rc::clone(&self.env);
-                    let saved_temps = self.temps.clone();
+                    let saved_env = Rc::clone(&interpreter.env);
+                    let saved_temps = interpreter.temps.clone();
 
-                    self.env = scoped_env;
-                    self.temps.clear();
+                    interpreter.env = scoped_env;
+                    interpreter.temps.clear();
 
-                    let result = self.execute_block(&func.body_label);
+                    let result = interpreter.execute(&func.body_label);
 
-                    self.env = saved_env;
-                    self.temps = saved_temps;
+                    interpreter.env = saved_env;
+                    interpreter.temps = saved_temps;
 
                     result
                 } else {
@@ -339,13 +285,129 @@ impl Interpreter {
             }
 
             _ => Err(Error::NotCallable(func.name_of().to_string())),
+        }?;
+
+        interpreter.temps.insert(self.dest, result);
+
+        Ok(())
+    }
+}
+
+impl Interpret<()> for Index {
+    fn interpret(&self, interpreter: &mut Interpreter) -> Result<()> {
+        let indexable = interpreter.evaluate(self.indexable.clone())?;
+        let index = interpreter.evaluate(self.index.clone())?;
+
+        let result = match indexable {
+            DataType::Array(arr) => {
+                if let DataType::Integer(i) = index {
+                    let idx = *i as usize;
+                    Ok(arr.get(idx).cloned().unwrap_or(DataType::Null))
+                } else {
+                    Err(Error::IndexTypeMismatch(index.name_of().to_string()))
+                }
+            }
+            DataType::Object(obj) => {
+                // convert data-type to object-key
+                let key = match index {
+                    DataType::String(s) => ObjectKey::String(s),
+                    DataType::Integer(i) => ObjectKey::Integer(i),
+                    DataType::Boolean(b) => ObjectKey::Boolean(b),
+                    _ => return Err(Error::IndexTypeMismatch(index.name_of().to_string())),
+                };
+
+                Ok(obj.get(&key).cloned().unwrap_or(DataType::Null))
+            }
+            _ => Err(Error::NotIndexable(indexable.name_of().to_string())),
+        }?;
+
+        interpreter.temps.insert(self.dest, result);
+
+        Ok(())
+    }
+}
+
+impl Interpret<()> for Instruction {
+    fn interpret(&self, interpreter: &mut Interpreter) -> Result<()> {
+        match self {
+            Instruction::Assign(inner) => inner.interpret(interpreter),
+            Instruction::Binary(inner) => inner.interpret(interpreter),
+            Instruction::Unary(inner) => inner.interpret(interpreter),
+            Instruction::StoreVar(inner) => inner.interpret(interpreter),
+            Instruction::LoadVar(inner) => inner.interpret(interpreter),
+            Instruction::MakeArray(inner) => inner.interpret(interpreter),
+            Instruction::MakeObject(inner) => inner.interpret(interpreter),
+            Instruction::MakeFunction(inner) => inner.interpret(interpreter),
+            Instruction::Call(inner) => inner.interpret(interpreter),
+            Instruction::Index(inner) => inner.interpret(interpreter),
         }
     }
 }
 
+impl Interpret<DataType> for Goto {
+    fn interpret(&self, interpreter: &mut Interpreter) -> Result<DataType> {
+        interpreter.execute(&self.target)
+    }
+}
+
+impl Interpret<DataType> for Branch {
+    fn interpret(&self, interpreter: &mut Interpreter) -> Result<DataType> {
+        let cond = interpreter.evaluate(self.condition.clone())?;
+
+        let is_true = match cond {
+            DataType::Boolean(b) => *b,
+            DataType::Integer(i) => *i != 0,
+            _ => false,
+        };
+
+        let target = if is_true {
+            self.true_label
+        } else {
+            self.false_label
+        };
+
+        interpreter.execute(&target)
+    }
+}
+
+impl Interpret<DataType> for Return {
+    fn interpret(&self, interpreter: &mut Interpreter) -> Result<DataType> {
+        match &self.value {
+            Some(v) => Ok(interpreter.evaluate(v.clone())?),
+            None => Ok(DataType::Undefined),
+        }
+    }
+}
+
+impl Interpret<DataType> for Exit {
+    fn interpret(&self, interpreter: &mut Interpreter) -> Result<DataType> {
+        Ok(interpreter.evaluate(self.value.clone())?)
+    }
+}
+
+impl Interpret<DataType> for Terminator {
+    fn interpret(&self, interpreter: &mut Interpreter) -> Result<DataType> {
+        match self {
+            Terminator::Goto(inner) => inner.interpret(interpreter),
+            Terminator::Branch(inner) => inner.interpret(interpreter),
+            Terminator::Return(inner) => inner.interpret(interpreter),
+            Terminator::Exit(inner) => inner.interpret(interpreter),
+        }
+    }
+}
+
+/// execute a program starting from the program's entry label
 pub fn execute(program: Program, env: Rc<RefCell<Environment>>) -> Result<DataType> {
-    let interpreter = Interpreter::new(program, env);
-    interpreter.execute()
+    Interpreter::new(program, env).execute(&Label(0))
+}
+
+/// execute a program starting from the given entry label
+pub fn execute_from(
+    program: Program,
+    env: Rc<RefCell<Environment>>,
+    entry: Label,
+) -> Result<DataType> {
+    Interpreter::new(program, env).execute(&entry)
 }
 
 #[cfg(test)]

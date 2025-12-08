@@ -6,10 +6,11 @@ use crate::runtime::datatype::DataType;
 
 pub use error::{Error, Result};
 
+/// a transpiler converts an AST into an IR program
 pub struct Transpiler {
     program: Program,
-    next_temp: usize,
-    next_label: usize,
+    current_temp: usize,
+    current_label: usize,
     current_block: Option<Block>,
 }
 
@@ -17,106 +18,121 @@ impl Transpiler {
     pub fn new() -> Self {
         Self {
             program: Program::new(),
-            next_temp: 0,
-            next_label: 0,
+            current_temp: 0,
+            current_label: 0,
             current_block: None,
         }
     }
 
-    /// Generate a fresh temporary variable
-    fn fresh_temp(&mut self) -> Temp {
-        let temp = Temp(self.next_temp);
-        self.next_temp += 1;
+    /// generate the next available temporary variable.
+    fn generate_temp(&mut self) -> Temp {
+        let temp = Temp(self.current_temp);
+        self.current_temp += 1;
         temp
     }
 
-    /// Generate a fresh label
-    fn fresh_label(&mut self) -> Label {
-        let label = Label(self.next_label);
-        self.next_label += 1;
+    /// generate the next available label.
+    fn generate_label(&mut self) -> Label {
+        let label = Label(self.current_label);
+        self.current_label += 1;
         label
     }
 
-    /// Start a new basic block
-    fn start_block(&mut self, label: Label) {
-        self.finish_block();
+    /// start a new basic block with the given label.
+    ///
+    /// note: the previous block must have already been finalized with `end`.
+    fn start(&mut self, label: Label) {
+        debug_assert!(
+            self.current_block.is_none(),
+            "starting a new block while another is still open; call end() first",
+        );
 
         self.current_block = Some(Block::new(label));
     }
 
-    /// Finish current block
-    fn finish_block(&mut self) {
-        if let Some(block) = self.current_block.take() {
-            self.program.add_block(block);
+    /// emit an instruction into the current block
+    fn emit(&mut self, instruction: Instruction) {
+        if let Some(block) = &mut self.current_block {
+            block.add(instruction);
         }
     }
 
-    /// Add instruction to current block
-    fn emit(&mut self, instr: Instruction) {
-        if let Some(block) = &mut self.current_block {
-            block.add_instruction(instr);
+    /// set terminator for current block and add it to the program
+    fn end(&mut self, terminator: Terminator) {
+        if let Some(mut block) = self.current_block.take() {
+            block.end(terminator);
+            self.program.add(block);
         }
     }
 
-    /// Set terminator for current block
-    fn terminate(&mut self, term: Terminator) {
-        if let Some(block) = &mut self.current_block {
-            block.set_terminator(term);
-        }
+    /// take the current block and return it
+    fn take(&mut self) -> Option<Block> {
+        self.current_block.take()
+    }
+
+    /// restore a block as the current block
+    fn restore(&mut self, block: Option<Block>) {
+        self.current_block = block;
     }
 
     pub fn transpile(mut self, statements: Vec<Statement>) -> Result<Program> {
-        let entry = self.fresh_label();
+        let entry = self.generate_label();
 
-        self.program.entry_label = entry;
-        self.start_block(entry);
+        self.start(entry);
 
-        let mut last_value = Value::Constant(DataType::Undefined);
+        let mut result = Value::Constant(DataType::Undefined);
 
         for statement in statements {
-            last_value = self.transpile_statement(statement)?;
+            result = statement.transpile(&mut self)?;
         }
 
-        self.terminate(Terminator::Exit { value: last_value });
-        self.finish_block();
+        self.end(Terminator::Exit(Exit { value: result }));
 
         Ok(self.program)
     }
+}
 
-    /// Transpile a statement
-    fn transpile_statement(&mut self, stmt: Statement) -> Result<Value> {
-        match stmt {
+/// generic trait for lowering AST nodes into IR using a shared `Transpiler` context.
+pub trait Transpile<T> {
+    /// convert an AST node into IR using the given `Transpiler` and produce a value of type `T`.
+    fn transpile(&self, t: &mut Transpiler) -> Result<T>;
+}
+
+impl Transpile<Value> for Statement {
+    fn transpile(&self, t: &mut Transpiler) -> Result<Value> {
+        match self {
             Statement::Let {
                 identifier,
                 expression,
             } => {
-                let value = self.transpile_expression(expression)?;
-                self.emit(Instruction::StoreVar {
+                let value = expression.transpile(t)?;
+
+                t.emit(Instruction::StoreVar(StoreVar {
                     name: identifier.value,
                     value,
-                });
-                Ok(Value::Constant(DataType::Undefined))
-            }
-
-            Statement::Return(expr) => {
-                let value = self.transpile_expression(expr)?;
-                self.terminate(Terminator::Return { value: Some(value) });
-
-                // Create unreachable block for any following code
-                let unreachable = self.fresh_label();
-                self.finish_block();
-                self.start_block(unreachable);
+                }));
 
                 Ok(Value::Constant(DataType::Undefined))
             }
 
-            Statement::Expression(expr) => self.transpile_expression(expr),
+            Statement::Return(expression) => {
+                let value = expression.transpile(t)?;
+                t.end(Terminator::Return(Return { value: Some(value) }));
+
+                let unreachable = t.generate_label();
+                t.start(unreachable);
+
+                Ok(Value::Constant(DataType::Undefined))
+            }
+
+            Statement::Expression(expression) => expression.transpile(t),
         }
     }
+}
 
-    /// Transpile an expression (returns the Value representing the result)
-    fn transpile_expression(&mut self, expr: Expression) -> Result<Value> {
-        match expr {
+impl Transpile<Value> for Expression {
+    fn transpile(&self, t: &mut Transpiler) -> Result<Value> {
+        match self {
             Expression::Int(e) => {
                 use crate::runtime::datatype::Integer;
                 Ok(Value::Constant(DataType::Integer(Integer::new(e.value))))
@@ -133,223 +149,220 @@ impl Transpiler {
             }
 
             Expression::Identifier(e) => {
-                let dest = self.fresh_temp();
-                self.emit(Instruction::LoadVar {
+                let dest = t.generate_temp();
+                t.emit(Instruction::LoadVar(LoadVar {
                     dest: dest.clone(),
                     name: e.value,
-                });
+                }));
                 Ok(Value::Temp(dest))
             }
 
-            Expression::Prefix(e) => {
-                let operand = self.transpile_expression(*e.right)?;
-                let dest = self.fresh_temp();
-                self.emit(Instruction::Unary {
-                    dest: dest.clone(),
-                    op: e.operator,
-                    operand,
-                });
-                Ok(Value::Temp(dest))
-            }
-
-            Expression::Infix(e) => {
-                let left = self.transpile_expression(*e.left)?;
-                let right = self.transpile_expression(*e.right)?;
-                let dest = self.fresh_temp();
-                self.emit(Instruction::Binary {
-                    dest: dest.clone(),
-                    op: e.operator,
-                    left,
-                    right,
-                });
-                Ok(Value::Temp(dest))
-            }
-
-            Expression::If(e) => self.transpile_if(e),
-
-            Expression::Block(e) => self.transpile_block(e),
-
-            Expression::Function(e) => self.transpile_function(e),
-
-            Expression::Call(e) => self.transpile_call(e),
-
-            Expression::Array(e) => self.transpile_array(e),
-
-            Expression::Object(e) => self.transpile_object(e),
-
-            Expression::Index(e) => self.transpile_index(e),
+            Expression::Prefix(e) => e.transpile(t),
+            Expression::Infix(e) => e.transpile(t),
+            Expression::If(e) => e.transpile(t),
+            Expression::Block(e) => e.transpile(t),
+            Expression::Function(e) => e.transpile(t),
+            Expression::Call(e) => e.transpile(t),
+            Expression::Array(e) => e.transpile(t),
+            Expression::Object(e) => e.transpile(t),
+            Expression::Index(e) => e.transpile(t),
         }
     }
+}
 
-    /// Transpile if expression
-    fn transpile_if(&mut self, expr: IfExpression) -> Result<Value> {
-        // Evaluate condition
-        let condition = self.transpile_expression(*expr.condition)?;
+impl Transpile<Value> for PrefixExpression {
+    fn transpile(&self, t: &mut Transpiler) -> Result<Value> {
+        let operand = self.right.transpile(t)?;
+        let dest = t.generate_temp();
+        t.emit(Instruction::Unary(Unary {
+            dest: dest.clone(),
+            op: self.operator.clone(),
+            operand,
+        }));
+        Ok(Value::Temp(dest))
+    }
+}
 
-        // Create a result temporary that will hold the final value
-        let result_temp = self.fresh_temp();
+impl Transpile<Value> for InfixExpression {
+    fn transpile(&self, t: &mut Transpiler) -> Result<Value> {
+        let left = self.left.transpile(t)?;
+        let right = self.right.transpile(t)?;
+        let dest = t.generate_temp();
+        t.emit(Instruction::Binary(Binary {
+            dest: dest.clone(),
+            op: self.operator.clone(),
+            left,
+            right,
+        }));
+        Ok(Value::Temp(dest))
+    }
+}
 
-        // Create labels
-        let then_label = self.fresh_label();
-        let else_label = self.fresh_label();
-        let merge_label = self.fresh_label();
+impl Transpile<Value> for IfExpression {
+    fn transpile(&self, t: &mut Transpiler) -> Result<Value> {
+        let condition = self.condition.transpile(t)?;
 
-        // Branch on condition
-        self.terminate(Terminator::Branch {
+        let result = t.generate_temp();
+
+        let then_label = t.generate_label();
+        let else_label = t.generate_label();
+        let merge_label = t.generate_label();
+
+        t.end(Terminator::Branch(Branch {
             condition,
             true_label: then_label,
             false_label: else_label,
-        });
-        self.finish_block();
+        }));
 
-        // Then block
-        self.start_block(then_label);
-        let then_value = self.transpile_block(*expr.consequence)?;
-        self.emit(Instruction::Assign {
-            dest: result_temp.clone(),
+        // then block
+        t.start(then_label);
+
+        let then_value = self.consequence.transpile(t)?;
+
+        t.emit(Instruction::Assign(Assign {
+            dest: result.clone(),
             value: then_value,
-        });
-        self.terminate(Terminator::Goto {
-            target: merge_label,
-        });
-        self.finish_block();
+        }));
 
-        // Else block
-        self.start_block(else_label);
-        let else_value = if let Some(alt) = expr.alternative {
-            self.transpile_block(*alt)?
+        t.end(Terminator::Goto(Goto {
+            target: merge_label,
+        }));
+
+        // else block
+        t.start(else_label);
+
+        let else_value = if let Some(alt) = &self.alternative {
+            alt.transpile(t)?
         } else {
             Value::Constant(DataType::Undefined)
         };
-        self.emit(Instruction::Assign {
-            dest: result_temp.clone(),
+
+        t.emit(Instruction::Assign(Assign {
+            dest: result.clone(),
             value: else_value,
-        });
-        self.terminate(Terminator::Goto {
+        }));
+
+        t.end(Terminator::Goto(Goto {
             target: merge_label,
-        });
-        self.finish_block();
+        }));
 
-        // Merge block
-        self.start_block(merge_label);
+        // merge block
+        t.start(merge_label);
 
-        // Return the result temporary that was assigned in both branches
-        Ok(Value::Temp(result_temp))
+        Ok(Value::Temp(result))
     }
+}
 
-    /// Transpile block expression
-    fn transpile_block(&mut self, expr: BlockExpression) -> Result<Value> {
-        let mut last_value = Value::Constant(DataType::Undefined);
+impl Transpile<Value> for BlockExpression {
+    fn transpile(&self, t: &mut Transpiler) -> Result<Value> {
+        let mut value = Value::Constant(DataType::Undefined);
 
-        for stmt in expr.statements {
-            last_value = self.transpile_statement(stmt)?;
+        for statement in &self.statements {
+            value = statement.transpile(t)?;
         }
 
-        Ok(last_value)
+        Ok(value)
     }
+}
 
-    /// Transpile function expression
-    fn transpile_function(&mut self, expr: FunctionExpression) -> Result<Value> {
-        // Save current state
-        let saved_block = self.current_block.take();
+impl Transpile<Value> for FunctionExpression {
+    fn transpile(&self, t: &mut Transpiler) -> Result<Value> {
+        let saved_block = t.take();
 
-        // Create function body label
-        let body_label = self.fresh_label();
+        let body = t.generate_label();
+        t.start(body);
+        let value = self.body.transpile(t)?;
+        t.end(Terminator::Return(Return { value: Some(value) }));
 
-        // Transpile function body in new context
-        self.start_block(body_label);
-        let body_value = self.transpile_block(*expr.body)?;
-        self.terminate(Terminator::Return {
-            value: Some(body_value),
-        });
-        self.finish_block();
+        t.restore(saved_block);
 
-        // Restore state
-        self.current_block = saved_block;
-
-        // Create function object
-        let dest = self.fresh_temp();
-        let params = expr.parameters.into_iter().map(|p| p.value).collect();
-        self.emit(Instruction::MakeFunction {
+        let dest = t.generate_temp();
+        let params = self.parameters.iter().map(|p| p.value).collect();
+        t.emit(Instruction::MakeFunction(MakeFunction {
             dest: dest.clone(),
             params,
-            body_label,
-        });
+            body,
+        }));
 
         Ok(Value::Temp(dest))
     }
+}
 
-    /// Transpile function call
-    fn transpile_call(&mut self, expr: CallExpression) -> Result<Value> {
-        let callable = self.transpile_expression(*expr.callable)?;
-        let args = expr
+impl Transpile<Value> for CallExpression {
+    fn transpile(&self, t: &mut Transpiler) -> Result<Value> {
+        let callable = self.callable.transpile(t)?;
+        let args = self
             .arguments
-            .into_iter()
-            .map(|arg| self.transpile_expression(arg))
+            .iter()
+            .map(|arg| arg.transpile(t))
             .collect::<Result<Vec<_>>>()?;
 
-        let dest = self.fresh_temp();
-        self.emit(Instruction::Call {
+        let dest = t.generate_temp();
+        t.emit(Instruction::Call(Call {
             dest: dest.clone(),
             callable,
             args,
-        });
+        }));
 
         Ok(Value::Temp(dest))
     }
+}
 
-    /// Transpile array expression
-    fn transpile_array(&mut self, expr: ArrayExpression) -> Result<Value> {
-        let elements = expr
+impl Transpile<Value> for ArrayExpression {
+    fn transpile(&self, t: &mut Transpiler) -> Result<Value> {
+        let elements = self
             .elements
-            .into_iter()
-            .map(|elem| self.transpile_expression(elem))
+            .iter()
+            .map(|elem| elem.transpile(t))
             .collect::<Result<Vec<_>>>()?;
 
-        let dest = self.fresh_temp();
-        self.emit(Instruction::MakeArray {
+        let dest = t.generate_temp();
+        t.emit(Instruction::MakeArray(MakeArray {
             dest: dest.clone(),
             elements,
-        });
+        }));
 
         Ok(Value::Temp(dest))
     }
+}
 
-    /// Transpile object expression
-    fn transpile_object(&mut self, expr: ObjectExpression) -> Result<Value> {
+impl Transpile<Value> for ObjectExpression {
+    fn transpile(&self, t: &mut Transpiler) -> Result<Value> {
         let mut pairs = Vec::new();
-        for (key, value) in expr.pairs {
-            let k = self.transpile_expression(key)?;
-            let v = self.transpile_expression(value)?;
+
+        for (key, value) in &self.pairs {
+            let k = key.transpile(t)?;
+            let v = value.transpile(t)?;
+
             pairs.push((k, v));
         }
 
-        let dest = self.fresh_temp();
-        self.emit(Instruction::MakeObject {
+        let dest = t.generate_temp();
+        t.emit(Instruction::MakeObject(MakeObject {
             dest: dest.clone(),
             pairs,
-        });
+        }));
 
         Ok(Value::Temp(dest))
     }
+}
 
-    /// Transpile index expression
-    fn transpile_index(&mut self, expr: IndexExpression) -> Result<Value> {
-        let indexable = self.transpile_expression(*expr.left)?;
-        let index = self.transpile_expression(*expr.index)?;
+impl Transpile<Value> for IndexExpression {
+    fn transpile(&self, t: &mut Transpiler) -> Result<Value> {
+        let indexable = self.left.transpile(t)?;
+        let index = self.index.transpile(t)?;
 
-        let dest = self.fresh_temp();
-        self.emit(Instruction::Index {
+        let dest = t.generate_temp();
+        t.emit(Instruction::Index(Index {
             dest: dest.clone(),
             indexable,
             index,
-        });
+        }));
 
         Ok(Value::Temp(dest))
     }
 }
 
 pub fn transpile(statements: Vec<Statement>) -> Result<Program> {
-    let transpiler = Transpiler::new();
-    transpiler.transpile(statements)
+    Transpiler::new().transpile(statements)
 }
