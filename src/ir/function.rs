@@ -5,6 +5,7 @@ use internment::Intern;
 use crate::ir::program::Label;
 use crate::runtime::environment::Environment;
 
+/// a function is a list of parameters, a body label, and an environment
 #[derive(Debug, Clone, PartialEq)]
 pub struct Function {
     pub parameters: Vec<Intern<std::string::String>>,

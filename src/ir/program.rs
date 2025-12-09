@@ -1,33 +1,58 @@
-use std::collections::HashMap;
 use std::fmt::Display;
 
 use crate::ast::{BinaryOperator, UnaryOperator};
 use crate::runtime::datatype::DataType;
 use internment::Intern;
 
+/// a program is a list of basic blocks
 #[derive(Debug, Clone, PartialEq)]
 pub struct Program {
-    pub blocks: HashMap<Label, Block>,
-    pub entry_label: Label,
+    blocks: Vec<Option<Block>>,
 }
 
 impl Program {
     pub fn new() -> Self {
-        Self {
-            blocks: HashMap::new(),
-            entry_label: Label(0),
+        Self { blocks: Vec::new() }
+    }
+
+    /// add a basic block to the program at the given label
+    pub fn add(&mut self, block: Block) {
+        let index = block.label.0;
+
+        if index >= self.blocks.len() {
+            self.blocks.resize_with(index + 1, || None);
         }
+
+        self.blocks[index] = Some(block);
     }
 
-    pub fn add_block(&mut self, block: Block) {
-        self.blocks.insert(block.label, block);
+    /// get a basic block from the program at the given label
+    pub fn get(&self, label: &Label) -> Option<&Block> {
+        self.blocks.get(label.0).and_then(|b| b.as_ref())
     }
 
-    pub fn get_block(&self, label: &Label) -> Option<&Block> {
-        self.blocks.get(label)
+    /// get an iterator over all basic blocks in the program
+    pub fn iter(&self) -> impl Iterator<Item = &Option<Block>> {
+        self.blocks.iter()
+    }
+
+    /// consume the other program and append the blocks from it to the end of this program
+    pub fn merge(&mut self, other: Program) -> Label {
+        let offset = self.blocks.len();
+        let entry = Label(offset);
+
+        for maybe_block in other.blocks.into_iter() {
+            if let Some(mut block) = maybe_block {
+                block.offset_labels(offset);
+                self.add(block);
+            }
+        }
+
+        entry
     }
 }
 
+/// a basic block is a list of instructions and a terminator with a label
 #[derive(Debug, Clone, PartialEq)]
 pub struct Block {
     pub label: Label,
@@ -40,21 +65,46 @@ impl Block {
         Self {
             label,
             instructions: Vec::new(),
-            terminator: Terminator::Exit {
+            terminator: Terminator::Exit(Exit {
                 value: Value::Constant(DataType::Undefined),
-            },
+            }),
         }
     }
 
-    pub fn add_instruction(&mut self, instr: Instruction) {
-        self.instructions.push(instr);
+    /// add an instruction to the basic block
+    pub fn add(&mut self, instruction: Instruction) {
+        self.instructions.push(instruction);
     }
 
-    pub fn set_terminator(&mut self, term: Terminator) {
-        self.terminator = term;
+    /// set the terminator for the basic block
+    pub fn end(&mut self, terminator: Terminator) {
+        self.terminator = terminator;
+    }
+
+    /// deep offset all labels in the block
+    pub fn offset_labels(&mut self, offset: usize) {
+        self.label = Label(self.label.0 + offset);
+
+        match &mut self.terminator {
+            Terminator::Goto(goto) => {
+                goto.target = Label(goto.target.0 + offset);
+            }
+            Terminator::Branch(branch) => {
+                branch.true_label = Label(branch.true_label.0 + offset);
+                branch.false_label = Label(branch.false_label.0 + offset);
+            }
+            Terminator::Return(_) | Terminator::Exit(_) => {}
+        }
+
+        for instr in &mut self.instructions {
+            if let Instruction::MakeFunction(func) = instr {
+                func.body = Label(func.body.0 + offset);
+            }
+        }
     }
 }
 
+/// a label for a block of instructions
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Label(pub usize);
 
@@ -64,6 +114,7 @@ impl Display for Label {
     }
 }
 
+/// a temporary variable in a block of instructions
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Temp(pub usize);
 
@@ -73,91 +124,141 @@ impl Display for Temp {
     }
 }
 
+/// instructions are statements that perform an action.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Instruction {
-    /// Assignment: dest = value
-    Assign { dest: Temp, value: Value },
-
-    /// Binary operation: dest = left op right
-    Binary {
-        dest: Temp,
-        op: BinaryOperator,
-        left: Value,
-        right: Value,
-    },
-
-    /// Unary operation: dest = op operand
-    Unary {
-        dest: Temp,
-        op: UnaryOperator,
-        operand: Value,
-    },
-
-    /// Variable store: var_name = value
-    StoreVar { name: Intern<String>, value: Value },
-
-    /// Variable load: dest = var_name
-    LoadVar { dest: Temp, name: Intern<String> },
-
-    /// Array creation: dest = [elements...]
-    MakeArray { dest: Temp, elements: Vec<Value> },
-
-    /// Object creation: dest = {key1: val1, key2: val2, ...}
-    MakeObject {
-        dest: Temp,
-        pairs: Vec<(Value, Value)>,
-    },
-
-    /// Function creation: dest = fn(params) { body_label }
-    MakeFunction {
-        dest: Temp,
-        params: Vec<Intern<String>>,
-        body_label: Label,
-    },
-
-    /// Function call: dest = callable(args...)
-    Call {
-        dest: Temp,
-        callable: Value,
-        args: Vec<Value>,
-    },
-
-    /// Array/Object indexing: dest = indexable[index]
-    Index {
-        dest: Temp,
-        indexable: Value,
-        index: Value,
-    },
+    Assign(Assign),
+    Binary(Binary),
+    Unary(Unary),
+    StoreVar(StoreVar),
+    LoadVar(LoadVar),
+    MakeArray(MakeArray),
+    MakeObject(MakeObject),
+    MakeFunction(MakeFunction),
+    Call(Call),
+    Index(Index),
 }
 
+/// assignment: dest = value
+#[derive(Debug, Clone, PartialEq)]
+pub struct Assign {
+    pub dest: Temp,
+    pub value: Value,
+}
+
+/// binary operation: dest = left op right
+#[derive(Debug, Clone, PartialEq)]
+pub struct Binary {
+    pub dest: Temp,
+    pub op: BinaryOperator,
+    pub left: Value,
+    pub right: Value,
+}
+
+/// unary operation: dest = op operand
+#[derive(Debug, Clone, PartialEq)]
+pub struct Unary {
+    pub dest: Temp,
+    pub op: UnaryOperator,
+    pub operand: Value,
+}
+
+/// variable store: var_name = value
+#[derive(Debug, Clone, PartialEq)]
+pub struct StoreVar {
+    pub name: Intern<String>,
+    pub value: Value,
+}
+
+/// variable load: dest = var_name
+#[derive(Debug, Clone, PartialEq)]
+pub struct LoadVar {
+    pub dest: Temp,
+    pub name: Intern<String>,
+}
+
+/// array creation: dest = [elements...]
+#[derive(Debug, Clone, PartialEq)]
+pub struct MakeArray {
+    pub dest: Temp,
+    pub elements: Vec<Value>,
+}
+
+/// object creation: dest = {key1: val1, key2: val2, ...}
+#[derive(Debug, Clone, PartialEq)]
+pub struct MakeObject {
+    pub dest: Temp,
+    pub pairs: Vec<(Value, Value)>,
+}
+
+/// function creation: dest = fn(params) { body_label }
+#[derive(Debug, Clone, PartialEq)]
+pub struct MakeFunction {
+    pub dest: Temp,
+    pub params: Vec<Intern<String>>,
+    pub body: Label,
+}
+
+/// function call: dest = callable(args...)
+#[derive(Debug, Clone, PartialEq)]
+pub struct Call {
+    pub dest: Temp,
+    pub callable: Value,
+    pub args: Vec<Value>,
+}
+
+/// array/object indexing: dest = indexable[index]
+#[derive(Debug, Clone, PartialEq)]
+pub struct Index {
+    pub dest: Temp,
+    pub indexable: Value,
+    pub index: Value,
+}
+
+/// terminators are instructions that terminate a block.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Terminator {
-    /// Unconditional jump
-    Goto { target: Label },
-
-    /// Conditional branch: if condition then true_label else false_label
-    Branch {
-        condition: Value,
-        true_label: Label,
-        false_label: Label,
-    },
-
-    /// Return from function/program
-    Return { value: Option<Value> },
-
-    /// Exit program (end of main)
-    Exit { value: Value },
+    Goto(Goto),
+    Branch(Branch),
+    Return(Return),
+    Exit(Exit),
 }
 
-/// Values in IR (operands)
+/// unconditional jump to a labeled block
+#[derive(Debug, Clone, PartialEq)]
+pub struct Goto {
+    pub target: Label,
+}
+
+/// conditional branch: if condition then true_label else false_label
+#[derive(Debug, Clone, PartialEq)]
+pub struct Branch {
+    pub condition: Value,
+    pub true_label: Label,
+    pub false_label: Label,
+}
+
+/// return from function/program
+#[derive(Debug, Clone, PartialEq)]
+pub struct Return {
+    pub value: Option<Value>,
+}
+
+/// exit program (end of main)
+#[derive(Debug, Clone, PartialEq)]
+pub struct Exit {
+    pub value: Value,
+}
+
+/// values in IR (operands)
 #[derive(Debug, Clone, PartialEq)]
 pub enum Value {
-    /// Constant literal
+    /// constant literal
     Constant(DataType),
 
-    /// Temporary variable
+    /// temporary variable
     Temp(Temp),
 
-    /// Named variable
+    /// named variable
     Var(Intern<String>),
 }
