@@ -1,11 +1,21 @@
+use std::rc::Rc;
+
 use super::error::Error;
-use crate::runtime::datatype::{Array, DataType, Function, Integer};
+use crate::runtime::{
+    builtins::function::Function,
+    datatype::{Array, DataType, Integer},
+};
+
+/// list of built-in functions
+pub fn definitions<'a>() -> [(&'a str, DataType); 6] {
+    [len(), first(), last(), rest(), push(), puts()]
+}
 
 /// returns the length of the given string or array
-pub const fn len<'a>() -> (&'a str, DataType) {
+pub fn len<'a>() -> (&'a str, DataType) {
     (
         "len",
-        DataType::Function(Function::new(|args| {
+        DataType::Function(Rc::new(Function::new(|args| {
             if args.len() != 1 {
                 return Err(Error::ExtraArguments {
                     builtin: "len".into(),
@@ -24,15 +34,15 @@ pub const fn len<'a>() -> (&'a str, DataType) {
                     position: 0,
                 }),
             }
-        })),
+        }))),
     )
 }
 
 /// returns the first element of the given array
-pub const fn first<'a>() -> (&'a str, DataType) {
+pub fn first<'a>() -> (&'a str, DataType) {
     (
         "first",
-        DataType::Function(Function::new(|args| {
+        DataType::Function(Rc::new(Function::new(|args| {
             if args.len() != 1 {
                 return Err(Error::ExtraArguments {
                     builtin: "first".into(),
@@ -56,15 +66,15 @@ pub const fn first<'a>() -> (&'a str, DataType) {
                     position: 0,
                 }),
             }
-        })),
+        }))),
     )
 }
 
 /// returns the last element of the given array
-pub const fn last<'a>() -> (&'a str, DataType) {
+pub fn last<'a>() -> (&'a str, DataType) {
     (
         "last",
-        DataType::Function(Function::new(|args| {
+        DataType::Function(Rc::new(Function::new(|args| {
             if args.len() != 1 {
                 return Err(Error::ExtraArguments {
                     builtin: "last".into(),
@@ -88,15 +98,15 @@ pub const fn last<'a>() -> (&'a str, DataType) {
                     position: 0,
                 }),
             }
-        })),
+        }))),
     )
 }
 
 /// returns all elements except the first of the given array
-pub const fn rest<'a>() -> (&'a str, DataType) {
+pub fn rest<'a>() -> (&'a str, DataType) {
     (
         "rest",
-        DataType::Function(Function::new(|args| {
+        DataType::Function(Rc::new(Function::new(|args| {
             if args.len() != 1 {
                 return Err(Error::ExtraArguments {
                     builtin: "rest".into(),
@@ -120,15 +130,15 @@ pub const fn rest<'a>() -> (&'a str, DataType) {
                     position: 0,
                 }),
             }
-        })),
+        }))),
     )
 }
 
 /// appends an element to the end of the given array
-pub const fn push<'a>() -> (&'a str, DataType) {
+pub fn push<'a>() -> (&'a str, DataType) {
     (
         "push",
-        DataType::Function(Function::new(|args| {
+        DataType::Function(Rc::new(Function::new(|args| {
             if args.len() != 2 {
                 return Err(Error::ExtraArguments {
                     builtin: "push".into(),
@@ -152,20 +162,20 @@ pub const fn push<'a>() -> (&'a str, DataType) {
                     position: 0,
                 }),
             }
-        })),
+        }))),
     )
 }
 
 /// prints the given value to the standard output
-pub const fn puts<'a>() -> (&'a str, DataType) {
+pub fn puts<'a>() -> (&'a str, DataType) {
     (
         "puts",
-        DataType::Function(Function::new(|args| {
+        DataType::Function(Rc::new(Function::new(|args| {
             for arg in args {
                 println!("{}", arg);
             }
 
             Ok(DataType::Undefined)
-        })),
+        }))),
     )
 }
