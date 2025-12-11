@@ -1,10 +1,9 @@
+mod definitions;
+mod function;
+
 pub mod error;
-mod functions;
 
-use functions::*;
+pub use definitions::definitions;
+pub use function::Function;
 
-use crate::runtime::datatype::DataType;
-
-pub fn builtins<'a>() -> [(&'a str, DataType); 6] {
-    [len(), first(), last(), rest(), push(), puts()]
-}
+use crate::runtime::DataType;

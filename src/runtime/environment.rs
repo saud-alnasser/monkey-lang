@@ -1,6 +1,6 @@
 use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
-use crate::runtime::{builtins::builtins, datatype::DataType};
+use crate::runtime::{DataType, builtins};
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct Environment {
@@ -20,7 +20,7 @@ impl Environment {
                         outer: None,
                     };
 
-                    for (key, value) in builtins() {
+                    for (key, value) in builtins::definitions() {
                         outer.set(key, value);
                     }
 
@@ -44,4 +44,3 @@ impl Environment {
         self.store.insert(key.into(), value);
     }
 }
-

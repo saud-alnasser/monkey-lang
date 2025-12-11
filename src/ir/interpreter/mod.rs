@@ -1,11 +1,12 @@
 mod error;
 
+use std::any::Any;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
 
 use crate::ast::{BinaryOperator, UnaryOperator};
-use crate::ir::{self, program::*};
+use crate::ir::program::*;
 use crate::runtime::datatype::*;
 use crate::runtime::environment::Environment;
 
@@ -233,7 +234,7 @@ impl Interpret<()> for MakeFunction {
 
         interpreter.temps.insert(
             self.dest,
-            DataType::Opaque(Rc::new(Function::new(
+            DataType::Function(Rc::new(Function::new(
                 self.params.clone(),
                 self.body,
                 Rc::clone(&interpreter.env),
@@ -255,11 +256,11 @@ impl Interpret<()> for Call {
             .map(|a| interpreter.evaluate(a))
             .collect::<Result<Vec<_>>>()?;
 
-        let result = match func {
-            DataType::Function(Function(f)) => f(args).map_err(Error::BuiltinError),
+        let result = match &func {
+            DataType::Function(callable) => {
+                let any = callable.as_ref() as &dyn Any;
 
-            DataType::Opaque(opaque) => {
-                if let Some(func) = opaque.downcast_ref::<ir::Function>() {
+                if let Some(func) = any.downcast_ref::<crate::ir::Function>() {
                     let scoped_env =
                         Rc::new(RefCell::new(Environment::new(Some(Rc::clone(&func.env)))));
 
@@ -279,8 +280,11 @@ impl Interpret<()> for Call {
                     interpreter.temps = saved_temps;
 
                     result
+                } else if let Some(func) = any.downcast_ref::<crate::runtime::builtins::Function>()
+                {
+                    (func.0)(args).map_err(Error::BuiltinError)
                 } else {
-                    Err(Error::NotCallable("OPAQUE".to_string()))
+                    Err(Error::NotCallable("FUNCTION".to_string()))
                 }
             }
 
@@ -678,9 +682,10 @@ mod tests {
         let env = Rc::new(RefCell::new(Environment::new(None)));
 
         match execute(transpiler::transpile(program).unwrap(), env) {
-            Ok(DataType::Opaque(opaque)) => {
+            Ok(DataType::Function(func)) => {
                 use crate::ir::Function;
-                let ir_func = opaque.downcast_ref::<Function>().unwrap();
+                let any = func.as_ref() as &dyn Any;
+                let ir_func = any.downcast_ref::<Function>().unwrap();
 
                 assert_eq!(ir_func.parameters.len(), 1);
                 assert_eq!(&**ir_func.parameters.first().unwrap(), "x");

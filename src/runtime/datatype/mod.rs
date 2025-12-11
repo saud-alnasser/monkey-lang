@@ -1,13 +1,13 @@
 mod array;
 mod boolean;
-mod function;
+mod callable;
 mod integer;
 mod object;
 mod string;
 
-use std::fmt::Display;
+use std::{fmt::Display, rc::Rc};
 
-pub use self::{array::*, boolean::*, function::*, integer::*, object::*, string::*};
+pub use self::{array::*, boolean::*, callable::*, integer::*, object::*, string::*};
 
 #[derive(Debug, Clone)]
 pub enum DataType {
@@ -15,12 +15,10 @@ pub enum DataType {
     String(String),
     Boolean(Boolean),
     Array(Array),
-    Function(Function),
+    Function(Rc<dyn Callable>),
     Object(Object),
     Undefined,
     Null,
-    // Opaque type for IR-specific data
-    Opaque(std::rc::Rc<dyn std::any::Any>),
 }
 
 impl PartialEq for DataType {
@@ -34,7 +32,6 @@ impl PartialEq for DataType {
             (DataType::Undefined, DataType::Undefined) => true,
             (DataType::Null, DataType::Null) => true,
             (DataType::Function(_), DataType::Function(_)) => false,
-            (DataType::Opaque(_), DataType::Opaque(_)) => false,
             _ => false,
         }
     }
@@ -51,7 +48,6 @@ impl Display for DataType {
             DataType::Object(value) => write!(f, "{}", value),
             DataType::Undefined => write!(f, ""),
             DataType::Null => write!(f, "null"),
-            DataType::Opaque(_) => write!(f, "<opaque>"),
         }
     }
 }
@@ -67,7 +63,6 @@ impl DataType {
             DataType::Object(_) => "OBJECT",
             DataType::Undefined => "UNDEFINED",
             DataType::Null => "NULL",
-            DataType::Opaque(_) => "OPAQUE",
         }
     }
 }

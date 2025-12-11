@@ -1,8 +1,10 @@
+use std::fmt::Display;
 use std::{cell::RefCell, rc::Rc};
 
 use internment::Intern;
 
 use crate::ir::program::Label;
+use crate::runtime::Callable;
 use crate::runtime::environment::Environment;
 
 /// a function is a list of parameters, a body label, and an environment
@@ -11,6 +13,14 @@ pub struct Function {
     pub parameters: Vec<Intern<std::string::String>>,
     pub body_label: Label,
     pub env: Rc<RefCell<Environment>>,
+}
+
+impl Callable for Function {}
+
+impl Display for Function {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "<function>")
+    }
 }
 
 impl Function {
